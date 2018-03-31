@@ -1,0 +1,64 @@
+data_configs:
+  lang_pair: "en-zh"
+  train_data:
+    - "/home/weihr/NMT_DATA_PY3/1.34M/train/zh.under50.txt"
+    - "/home/weihr/NMT_DATA_PY3/1.34M/train/en.under50.txt"
+  valid_data:
+    - "./test/valid/en-zh/zh.0"
+    - "./test/valid/en-zh/en.0"
+  bleu_valid_reference: "./test/valid/en-zh/en."
+  dictionaries:
+    - "/home/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
+    - "/home/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
+  bpe_codes:
+    - ""
+    - ""
+  n_words:
+    - 3001
+    - 3007
+  max_len:
+    - 20
+    - 20
+  num_refs: 4
+  eval_at_char_level: false
+
+model_configs:
+  n_layers: 2
+  n_head: 3
+  d_word_vec: &dim 24
+  d_model: *dim
+  d_inner_hid: 17
+  dropout: 0.1
+  n_max_seq: 100
+  proj_share_weight: true
+  label_smoothing: 0.1
+
+optimizer_configs:
+  optimizer: "adam"
+  learning_rate: 2.0
+  grad_clip: 0.0
+  optimizer_params: # other arguments for optimizer.
+    betas:
+      - 0.9
+      - 0.998
+
+training_configs:
+  max_epochs: 1000000
+  shuffle: false
+  use_bucket: true
+  shard_size: 3
+  batch_size: 10
+  valid_batch_size: 3
+  bleu_valid_batch_size: 3
+  bleu_valid_warmup: 10000
+  disp_freq: 100
+  save_freq: 1000
+  loss_valid_freq: &decay_freq 2
+  bleu_valid_freq: 100
+  early_stop_patience: 20
+  decay_method: "loss" # whether to decay loss according to valid loss
+  decay_freq: *decay_freq
+  decay_warmup_steps: 3
+  lrate_decay_patience: 20
+  min_lrate: -1.0 # the minimum learning rate
+
