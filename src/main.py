@@ -240,6 +240,9 @@ def train(FLAGS):
     optimizer_configs = configs['optimizer_configs']
     training_configs = configs['training_configs']
 
+    if 'buffer_size' not in training_configs:
+        training_configs['buffer_size'] = 100 * training_configs['batch_size']
+
     saveto_collections = '%s.pkl' % os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_CHECKPOINIS_PREFIX)
     saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
 
@@ -279,9 +282,10 @@ def train(FLAGS):
     )
 
     training_iterator = DataIterator(dataset=train_bitext_dataset,
-                                 batch_size=training_configs['batch_size'],
-                                 sort_buffer=training_configs['use_bucket'],
-                                 sort_fn=lambda line: len(line[-1]))
+                                     batch_size=training_configs['batch_size'],
+                                     sort_buffer=training_configs['use_bucket'],
+                                     buffer_size=training_configs['buffer_size'],
+                                     sort_fn=lambda line: len(line[-1]))
 
     valid_iterator = DataIterator(dataset=valid_bitext_dataset,
                               batch_size=training_configs['valid_batch_size'],
@@ -642,7 +646,7 @@ def translate(FLAGS):
         for trans in sent:
             sample = []
             for w in trans:
-                if w == 0:
+                if w == Vocab.EOS:
                     break
                 sample.append(vocab_tgt.id2token(w))
             samples.append(' '.join(sample))

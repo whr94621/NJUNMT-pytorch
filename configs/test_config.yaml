@@ -46,6 +46,7 @@ training_configs:
   max_epochs: 1000000
   shuffle: false
   use_bucket: true
+  buffer_size: 100
   shard_size: 3
   batch_size: 10
   valid_batch_size: 3
