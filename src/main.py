@@ -9,7 +9,7 @@ import numpy as np
 from src.utils.common_utils import *
 from src.utils.data_io import ZipDatasets, TextDataset, DataIterator
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
-from src.models import Transformer
+from src.models import *
 from src.modules.criterions import NMTCritierion
 from src.utils.optim import Optimizer
 from src.utils.lr_scheduler import LossScheduler, NoamScheduler
@@ -453,6 +453,9 @@ def train(FLAGS):
 
                 INFO('Saving the model at iteration {}...'.format(uidx))
 
+                if not os.path.exists(FLAGS.saveto):
+                    os.mkdir(FLAGS.saveto)
+
                 saveto_uidx = os.path.join(FLAGS.saveto, FLAGS.model_name + '.iter%d.tpz' % uidx)
                 torch.save(nmt_model.state_dict(), saveto_uidx)
 
@@ -581,8 +584,9 @@ def translate(FLAGS):
     INFO('Building model...')
     timer.tic()
 
-    nmt_model = Transformer(n_src_vocab=vocab_src.max_n_words,
-                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+    model_cls = eval(model_configs.get("model", default="Transformer"))
+    nmt_model = model_cls(n_src_vocab=vocab_src.max_n_words,
+                          n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
 
     nmt_model.eval()
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
