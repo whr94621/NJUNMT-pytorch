@@ -9,13 +9,14 @@ import numpy as np
 from src.utils.common_utils import *
 from src.utils.data_io import ZipDatasets, TextDataset, DataIterator
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
+import src.models
 from src.models import *
 from src.modules.criterions import NMTCritierion
 from src.utils.optim import Optimizer
 from src.utils.lr_scheduler import LossScheduler, NoamScheduler
 
-def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=True):
 
+def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=True):
     def _np_pad_batch_2D(samples, pad, batch_first=True, volatile=False, cuda=True):
 
         batch_size = len(samples)
@@ -26,7 +27,7 @@ def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=Tr
         x_np = np.full((batch_size, max_size), fill_value=pad, dtype='int64')
 
         for ii in range(batch_size):
-            x_np[ii,:sizes[ii]] = samples[ii]
+            x_np[ii, :sizes[ii]] = samples[ii]
 
         if batch_first is False:
             x_np = np.transpose(x_np, [1, 0])
@@ -36,7 +37,6 @@ def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=Tr
         if cuda is True:
             x = x.cuda()
         return x
-
 
     seqs_x = list(map(lambda s: [Vocab.BOS] + s + [Vocab.EOS], seqs_x))
     x = _np_pad_batch_2D(samples=seqs_x, pad=Vocab.PAD,
@@ -50,6 +50,7 @@ def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=Tr
                          volatile=volatile, cuda=cuda, batch_first=batch_first)
 
     return x, y
+
 
 def compute_forward(model,
                     critic,
@@ -82,7 +83,7 @@ def compute_forward(model,
 
     if n_correctness:
         mask = y_label.data.ne(Vocab.PAD)
-        pred = model.generator(dec_outs).data.max(2)[1] # [batch_size, seq_len]
+        pred = model.generator(dec_outs).data.max(2)[1]  # [batch_size, seq_len]
         num_correct = y_label.data.eq(pred).float().masked_select(mask).sum() / normalization
 
         return loss.data[0], num_correct
@@ -118,10 +119,10 @@ def loss_validation(model, critic, valid_iterator):
         x, y = prepare_data(seqs_x, seqs_y, volatile=True, cuda=GlobalNames.USE_GPU)
 
         loss, num_correct = compute_forward(model=model,
-                               critic=critic,
-                               seqs_x=x,
-                               seqs_y=y,
-                               eval=True, n_correctness=True)
+                                            critic=critic,
+                                            seqs_x=x,
+                                            seqs_y=y,
+                                            eval=True, n_correctness=True)
 
         if np.any(np.isnan(loss)):
             WARN("NaN detected!")
@@ -130,6 +131,7 @@ def loss_validation(model, critic, valid_iterator):
         sum_correct += num_correct
 
     return float(sum_loss / n_sents), float(sum_correct * 1.0 / n_tokens)
+
 
 def bleu_validation(uidx,
                     valid_iterator,
@@ -218,6 +220,7 @@ def bleu_validation(uidx,
 
     return bleu_v
 
+
 def train(FLAGS):
     """
     FLAGS:
@@ -279,13 +282,13 @@ def train(FLAGS):
     )
 
     training_iterator = DataIterator(dataset=train_bitext_dataset,
-                                 batch_size=training_configs['batch_size'],
-                                 sort_buffer=training_configs['use_bucket'],
-                                 sort_fn=lambda line: len(line[-1]))
+                                     batch_size=training_configs['batch_size'],
+                                     sort_buffer=training_configs['use_bucket'],
+                                     sort_fn=lambda line: len(line[-1]))
 
     valid_iterator = DataIterator(dataset=valid_bitext_dataset,
-                              batch_size=training_configs['valid_batch_size'],
-                              sort_buffer=False)
+                                  batch_size=training_configs['valid_batch_size'],
+                                  sort_buffer=False)
 
     bleu_scorer = ExternalScriptBLEUScorer(reference_path=data_configs['bleu_valid_reference'],
                                            lang_pair=data_configs['lang_pair'])
@@ -302,13 +305,20 @@ def train(FLAGS):
     INFO('Building model...')
     timer.tic()
 
-    nmt_model = Transformer(n_src_vocab=vocab_src.max_n_words,
-                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+    model_cls = model_configs.get("model")
+    if model_cls not in src.models.__all__:
+        raise ValueError(
+            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
+                model_cls, src.models.__all__))
+
+    nmt_model = eval(model_cls)(n_src_vocab=vocab_src.max_n_words,
+                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+    INFO(nmt_model)
 
     critic = NMTCritierion(num_tokens=vocab_tgt.max_n_words,
                            label_smoothing=model_configs['label_smoothing'])
 
-
+    INFO(critic)
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # Whether Reloading model
@@ -371,7 +381,7 @@ def train(FLAGS):
 
     cum_samples = 0
     cum_words = 0
-    valid_loss = 1.0 * 1e12 # Max Float
+    valid_loss = 1.0 * 1e12  # Max Float
     saving_files = []
 
     # Timer for computing speed
@@ -405,7 +415,6 @@ def train(FLAGS):
                     if training_configs['decay_method'] == "loss":
                         nmt_model.load_state_dict(params_best_loss)
 
-
             seqs_x, seqs_y = batch
 
             batch_size_t = len(seqs_x)
@@ -435,7 +444,6 @@ def train(FLAGS):
             # ================================================================================== #
             # Display some information
             if np.mod(uidx, training_configs['disp_freq']) == 0:
-
                 # words per second and sents per second
                 words_per_sec = cum_words / (timer.toc(return_seconds=True))
                 words_per_sen = cum_samples / (timer.toc(return_seconds=True))
@@ -479,9 +487,9 @@ def train(FLAGS):
             if np.mod(uidx, training_configs['loss_valid_freq']) == 0 or FLAGS.debug:
 
                 valid_loss, valid_n_correct = loss_validation(model=nmt_model,
-                                             critic=critic,
-                                             valid_iterator=valid_iterator,
-                                             )
+                                                              critic=critic,
+                                                              valid_iterator=valid_iterator,
+                                                              )
 
                 model_collections.add_to_collection("history_losses", valid_loss)
 
@@ -542,10 +550,12 @@ def train(FLAGS):
                 summary_writer.add_scalar("bad_count", bad_count, uidx)
 
                 with open("./valid.txt", 'a') as f:
-                    f.write("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}\n".format(uidx, valid_loss, valid_bleu, lrate, bad_count))
-
+                    f.write("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}\n".format(uidx, valid_loss,
+                                                                                                   valid_bleu, lrate,
+                                                                                                   bad_count))
 
         training_progress_bar.close()
+
 
 def translate(FLAGS):
     GlobalNames.USE_GPU = FLAGS.use_gpu
@@ -584,9 +594,14 @@ def translate(FLAGS):
     INFO('Building model...')
     timer.tic()
 
-    model_cls = eval(model_configs.get("model", default="Transformer"))
-    nmt_model = model_cls(n_src_vocab=vocab_src.max_n_words,
-                          n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+    model_cls = model_configs.get("model")
+    if model_cls not in src.models.__all__:
+        raise ValueError(
+            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
+                model_cls, src.models.__all__))
+
+    nmt_model = eval(model_cls)(n_src_vocab=vocab_src.max_n_words,
+                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
 
     nmt_model.eval()
     INFO('Done. Elapsed time {0}'.format(timer.toc()))

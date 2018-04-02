@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Define a sequence-to-sequence model with attention. """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+
+__all__ = ["Transformer", "FutureTransformer"]
+
 
 from .transformer import Transformer
 from .future_transformer import FutureTransformer
+

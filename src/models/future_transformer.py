@@ -20,7 +20,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.autograd import Variable
-from src.utils.common_utils import Vocab
+from src.utils.common_utils import Vocab, GlobalNames
 from src.modules.basic import BottleLinear as Linear
 from src.modules.sublayers import LayerNorm, PositionwiseFeedForward, MultiHeadedAttention
 from src.modules.embeddings import Embeddings
@@ -42,7 +42,10 @@ def lower_triangle_matrix(tgt_len):
         1 1 1
         [tgt_len, tgt_len]
     """
-    return torch.tril(torch.ones(tgt_len, tgt_len))
+    out = torch.tril(torch.ones(tgt_len, tgt_len))
+    if GlobalNames.USE_GPU:
+        out = out.cuda()
+    return out
 
 
 class TransformMinus(nn.Module):
@@ -108,6 +111,7 @@ class FutureBlock(nn.Module):
         history_mask = lower_triangle.unsqueeze(0).repeat(batch_size, 1, 1)
 
         # compute history. [batch, tgt_len, d_model]
+        history_mask = Variable(history_mask.float())
         history = torch.bmm(history_mask, decoder_output) / history_mask.sum(-1, keepdim=True)
 
         history = torch.tanh(self.history_linear(history))
@@ -136,12 +140,17 @@ class InitialStateBridge(nn.Module):
         :return: out: [batch, d_model]
         """
 
+        # prepare
+        enc_mask = Variable(1 - enc_mask.float())
+
         # [batch, d_model]
         summarization = torch.bmm(enc_mask.unsqueeze(1), enc_output).squeeze(1)
+
         # [batch, 1]
         length = enc_mask.sum(1, keepdim=True)
 
         out = summarization / length
+
         out = self.activ(self.dropout(out))
 
         return out
@@ -158,6 +167,7 @@ class FutureTransformerDecoder(Decoder):
 
         self.bridge = InitialStateBridge(d_model, dropout=dropout)
         self.future_block = FutureBlock(d_model, dropout=dropout)
+        self.linear_combine_future = nn.Linear(d_model*2, d_model)
         self.pos_ffn_future = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid)
         self.dropout = nn.Dropout(dropout)
 
@@ -185,10 +195,15 @@ class FutureTransformerDecoder(Decoder):
 
         # compute future info.
         summarization = self.bridge(enc_output, enc_mask)
+
         future = self.future_block(summarization=summarization,
                                    decoder_output=output)
+
         # add future info. to output via pos_fnn
-        output = self.dropout(torch.cat([output, future], dim=-1)) + output
+        combined = torch.cat([output, future], dim=-1)
+        combined = self.linear_combine_future(combined)
+
+        output = self.dropout(combined) + output
         output = self.pos_ffn_future(output)
 
         output = self.out_layer_norm(output)
@@ -216,3 +231,12 @@ class FutureTransformer(Transformer):
             n_tgt_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
             d_inner_hid=d_inner_hid, dropout=dropout)
+
+        if "use_wpd" in kwargs:
+            self.wpd_predictor = WPDPredictor(
+                n_words=n_tgt_vocab,
+                hidden_size=d_word_vec,
+                shared_weight=self.decoder.embeddings.embeddings.weight,
+                padding_idx=Vocab.PAD,
+                **kwargs.get("wpd.params", None))
+
