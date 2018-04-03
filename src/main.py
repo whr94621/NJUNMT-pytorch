@@ -324,32 +324,7 @@ def train(FLAGS):
     INFO(critic)
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
-    # # Whether Reloading model
-    # if FLAGS.reload is True and os.path.exists(saveto_best_model):
-    #     INFO('Reloading model...')
-    #     timer.tic()
-    #
-    #     params = torch.load(saveto_best_model)
-    #     nmt_model.load_state_dict(params)
-    #
-    #     model_archives = Collections.unpickle(path=saveto_collections)
-    #     model_collections.load(archives=model_archives)
-    #
-    #     uidx = model_archives['uidx']
-    #     bad_count = model_archives['bad_count']
-    #
-    #     INFO('Done. Elapsed time {0}'.format(timer.toc()))
-    #
-    # else:
-    #     uidx = 0
-    #     bad_count = 0
-    #
-    # if GlobalNames.USE_GPU:
-    #     nmt_model = nmt_model.cuda()
-    #     critic = critic.cuda()
-
     INFO('Building Optimizer...')
-
     optim = Optimizer(name=optimizer_configs['optimizer'],
                       model=nmt_model,
                       lr=lrate,
