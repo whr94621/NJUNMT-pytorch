@@ -26,9 +26,9 @@ def INFO(string):
 def create_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--file',type=str)
-    parser.add_argument('--num',type=int, default=0)
-    parser.add_argument('--freq', type=int, default=0)
-    parser.add_argument('--char', action='store_true', default=False)
+    parser.add_argument('--num',type=int, default=0, help="Number of words to keep.")
+    parser.add_argument('--freq', type=int, default=0, help="Least frequency to keep")
+    parser.add_argument('--char', action='store_true', default=False, help="Split words into characters.")
     parser.add_argument('--verbose', type=int, default=100000)
     return parser
 

@@ -58,7 +58,7 @@ class Encoder(nn.Module):
                                      dropout=dropout,
                                      add_position_embedding=True
                                      )
-        self.transformer = nn.ModuleList(
+        self.block_stack = nn.ModuleList(
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
              for _ in range(n_layers)])
 
@@ -76,7 +76,7 @@ class Encoder(nn.Module):
         out = emb
 
         for i in range(self.num_layers):
-            out = self.transformer[i](out, enc_slf_attn_mask)
+            out = self.block_stack[i](out, enc_slf_attn_mask)
 
         out = self.layer_norm(out)
 
@@ -135,7 +135,7 @@ class Decoder(nn.Module):
         self.embeddings = Embeddings(n_tgt_vocab, d_word_vec,
                                        dropout=dropout, add_position_embedding=True)
 
-        self.layer_stack = nn.ModuleList([
+        self.block_stack = nn.ModuleList([
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
             for _ in range(n_layers)])
 
@@ -146,7 +146,7 @@ class Decoder(nn.Module):
         caches = []
 
         for ii in range(self.num_layers):
-            caches.append(self.layer_stack[ii].compute_cache(enc_output))
+            caches.append(self.block_stack[ii].compute_cache(enc_output))
 
         return caches
 
@@ -168,7 +168,7 @@ class Decoder(nn.Module):
         for i in range(self.num_layers):
 
             output, attn, all_input \
-                = self.layer_stack[i](output,
+                = self.block_stack[i](output,
                                       enc_output,
                                       dec_slf_attn_mask,
                                       dec_enc_attn_mask,

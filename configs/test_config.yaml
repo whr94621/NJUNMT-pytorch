@@ -45,7 +45,8 @@ optimizer_configs:
 training_configs:
   max_epochs: 1000000
   shuffle: false
-  use_bucket: true
+  use_bucket: true # Whether to use bucket. If true, model will run faster while a little bit performance regression.
+  buffer_size: 100 # Only valid when use_bucket is true.
   shard_size: 3
   batch_size: 10
   valid_batch_size: 3

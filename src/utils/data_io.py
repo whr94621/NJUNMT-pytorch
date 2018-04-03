@@ -1,4 +1,3 @@
-from typing import List
 import numpy as np
 from itertools import islice
 import random
@@ -13,6 +12,18 @@ __all__ = [
     'ZipDatasets',
     'DataIterator'
 ]
+
+def shuffle_by_chunk(seq, chunck_size):
+
+    def _chunk(seq, n):
+
+        for i in range(0, len(seq), n):
+            yield seq[i:i+n]
+
+    seq_chunk = [c for c in _chunk(seq, chunck_size)]
+    random.shuffle(seq_chunk)
+
+    return sum(seq_chunk, [])
 
 class Dataset(object):
     def __init__(self, *args, **kwargs):
@@ -246,6 +257,8 @@ class DataIterator(object):
             # Customize buffer sorting algorithm
             scores = np.array([self.sort_fn(sample) for sample in batch])
             sorted_indices = np.argsort(scores).tolist()
+
+            sorted_indices = shuffle_by_chunk(sorted_indices, chunck_size=self.batch_size)
 
             batch = [batch[i] for i in sorted_indices]
         else:
