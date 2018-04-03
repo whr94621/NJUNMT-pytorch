@@ -455,6 +455,9 @@ def train(FLAGS):
             # Saving checkpoints
             if np.mod(uidx, training_configs['save_freq']) == 0 or FLAGS.debug:
 
+                if not os.path.exists(FLAGS.saveto):
+                    os.mkdir(FLAGS.saveto)
+
                 INFO('Saving the model at iteration {}...'.format(uidx))
 
                 saveto_uidx = os.path.join(FLAGS.saveto, FLAGS.model_name + '.iter%d.tpz' % uidx)
