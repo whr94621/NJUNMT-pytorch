@@ -342,24 +342,20 @@ def train(FLAGS):
     bad_count = 0
 
     # Whether Reloading model
-    if FLAGS.reload is True:
+    if FLAGS.reload is True and os.path.exists(saveto_best_model):
         INFO('Reloading model...')
         timer.tic()
-        if os.path.exists(saveto_best_model):
-            INFO("Reloading model...")
-            params = torch.load(saveto_best_model)
-            nmt_model.load_state_dict(params)
+        INFO("Reloading model...")
+        params = torch.load(saveto_best_model)
+        nmt_model.load_state_dict(params)
 
-            model_archives = Collections.unpickle(path=saveto_collections)
-            model_collections.load(archives=model_archives)
+        model_archives = Collections.unpickle(path=saveto_collections)
+        model_collections.load(archives=model_archives)
 
-            uidx = model_archives['uidx']
-            bad_count = model_archives['bad_count']
+        uidx = model_archives['uidx']
+        bad_count = model_archives['bad_count']
 
-            INFO("Done. Model reloaded.")
-        else:
-            INFO("Failed to reload model: {} does not exist".format(
-                saveto_best_model))
+        INFO("Done. Model reloaded.")
 
         if os.path.exists(saveto_best_optim_params):
             INFO("Reloading optimizer params...")
@@ -367,7 +363,7 @@ def train(FLAGS):
             optim.optim.load_state_dict(defaultdict(dict, **optimizer_params))
 
             INFO("Done. Optimizer params reloaded.")
-        else:
+        elif uidx > 0:
             INFO("Failed to reload optimizer params: {} does not exist".format(
                 saveto_best_optim_params))
 
