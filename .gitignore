@@ -106,9 +106,11 @@ venv.bak/
 .mypy_cache/
 test/
 test.py
-*.sh
+clean.sh
+test.sh
 TODO.md
 .idea/
+configs/test_config.yaml
 
 
 
