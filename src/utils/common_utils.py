@@ -55,6 +55,8 @@ class GlobalNames:
 
     MY_BEST_MODEL_SUFFIX = ".best.tpz"
 
+    MY_BEST_OPTIMIZER_PARAMS_SUFFIX = ".best_optim.tpz"
+
     MY_COLLECTIONS_SUFFIX = ".collections.pkl"
 
     MY_MODEL_ARCHIVES_SUFFIX = ".archives.pkl"

@@ -1,4 +1,6 @@
 import os
+from collections import defaultdict
+
 import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -226,8 +228,8 @@ def train(FLAGS):
     FLAGS:
         saveto: str
         reload: store_true
-        cofig_path: str
-        pretrain_path: str, defalut=""
+        config_path: str
+        pretrain_path: str, default=""
         model_name: str
         log_path: str
     """
@@ -245,6 +247,7 @@ def train(FLAGS):
 
     saveto_collections = '%s.pkl' % os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_CHECKPOINIS_PREFIX)
     saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
+    saveto_best_optim_params = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_OPTIMIZER_PARAMS_SUFFIX)
 
     timer = Timer()
 
@@ -321,19 +324,62 @@ def train(FLAGS):
     INFO(critic)
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
+    # # Whether Reloading model
+    # if FLAGS.reload is True and os.path.exists(saveto_best_model):
+    #     INFO('Reloading model...')
+    #     timer.tic()
+    #
+    #     params = torch.load(saveto_best_model)
+    #     nmt_model.load_state_dict(params)
+    #
+    #     model_archives = Collections.unpickle(path=saveto_collections)
+    #     model_collections.load(archives=model_archives)
+    #
+    #     uidx = model_archives['uidx']
+    #     bad_count = model_archives['bad_count']
+    #
+    #     INFO('Done. Elapsed time {0}'.format(timer.toc()))
+    #
+    # else:
+    #     uidx = 0
+    #     bad_count = 0
+    #
+    # if GlobalNames.USE_GPU:
+    #     nmt_model = nmt_model.cuda()
+    #     critic = critic.cuda()
+
+    INFO('Building Optimizer...')
+
+    optim = Optimizer(name=optimizer_configs['optimizer'],
+                      model=nmt_model,
+                      lr=lrate,
+                      grad_clip=optimizer_configs['grad_clip'],
+                      optim_args=optimizer_configs['optimizer_params']
+                      )
+
     # Whether Reloading model
-    if FLAGS.reload is True and os.path.exists(saveto_best_model):
+    if FLAGS.reload is True:
         INFO('Reloading model...')
         timer.tic()
+        if os.path.exists(saveto_best_model):
+            INFO("Reloading model...")
+            params = torch.load(saveto_best_model)
+            nmt_model.load_state_dict(params)
 
-        params = torch.load(saveto_best_model)
-        nmt_model.load_state_dict(params)
+            model_archives = Collections.unpickle(path=saveto_collections)
+            model_collections.load(archives=model_archives)
 
-        model_archives = Collections.unpickle(path=saveto_collections)
-        model_collections.load(archives=model_archives)
+            uidx = model_archives['uidx']
+            bad_count = model_archives['bad_count']
 
-        uidx = model_archives['uidx']
-        bad_count = model_archives['bad_count']
+            INFO("Done. Model reloaded.")
+
+        if os.path.exists(saveto_best_optim_params):
+            INFO("Reloading optimizer params...")
+            optimizer_params = torch.load(saveto_best_optim_params)
+            optim.optim.load_state_dict(defaultdict(dict, **optimizer_params))
+
+            INFO("Done. Optimizer params reloaded.")
 
         INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -344,15 +390,6 @@ def train(FLAGS):
     if GlobalNames.USE_GPU:
         nmt_model = nmt_model.cuda()
         critic = critic.cuda()
-
-    INFO('Building Optimizer...')
-
-    optim = Optimizer(name=optimizer_configs['optimizer'],
-                      model=nmt_model,
-                      lr=lrate,
-                      grad_clip=optimizer_configs['grad_clip'],
-                      optim_args=optimizer_configs['optimizer_params']
-                      )
 
     if training_configs['decay_method'] == "loss":
 
@@ -535,8 +572,14 @@ def train(FLAGS):
                     if is_early_stop is False:
                         INFO('Saving best model...')
 
+                        # save model
                         best_params = nmt_model.state_dict()
                         torch.save(best_params, saveto_best_model)
+
+                        # save optim params
+                        INFO('Saving best optimizer params...')
+                        best_optim_params = optim.optim.state_dict()
+                        torch.save(best_optim_params, saveto_best_optim_params)
 
                         INFO('Done.')
 
