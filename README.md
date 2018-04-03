@@ -26,10 +26,10 @@ See examples in ```./configs``` folder. You can reproduce our
 Chinese-to-English Baseline by directly using those configures.
 
 ```loss_schedule_config.yaml``` is the configure file using
-schedule moethod in.
+valid loss as schedule criterion.
 
 ```noam_schedule_config.yaml``` is the configure file using
-valid loss as schedule criterion.
+schedule method in google's paper.
 
 ## Training
 See training script ```./scripts/train.sh```
