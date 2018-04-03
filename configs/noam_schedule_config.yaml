@@ -23,6 +23,7 @@ data_configs:
   eval_at_char_level: false
 
 model_configs:
+  model: Transformer
   n_layers: 6
   n_head: 8
   d_word_vec: &dim 512
