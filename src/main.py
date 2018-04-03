@@ -250,7 +250,8 @@ def train(FLAGS):
 
     saveto_collections = '%s.pkl' % os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_CHECKPOINIS_PREFIX)
     saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
-    saveto_best_optim_params = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_OPTIMIZER_PARAMS_SUFFIX)
+    saveto_best_optim_params = os.path.join(FLAGS.saveto,
+                                            FLAGS.model_name + GlobalNames.MY_BEST_OPTIMIZER_PARAMS_SUFFIX)
 
     timer = Timer()
 
@@ -336,22 +337,25 @@ def train(FLAGS):
                       optim_args=optimizer_configs['optimizer_params']
                       )
 
+    # Initialize training indicators
+    uidx = 0
+    bad_count = 0
+
     # Whether Reloading model
-    if FLAGS.reload is True:
+    if FLAGS.reload is True and os.path.exists(saveto_best_model):
         INFO('Reloading model...')
         timer.tic()
-        if os.path.exists(saveto_best_model):
-            INFO("Reloading model...")
-            params = torch.load(saveto_best_model)
-            nmt_model.load_state_dict(params)
+        INFO("Reloading model...")
+        params = torch.load(saveto_best_model)
+        nmt_model.load_state_dict(params)
 
-            model_archives = Collections.unpickle(path=saveto_collections)
-            model_collections.load(archives=model_archives)
+        model_archives = Collections.unpickle(path=saveto_collections)
+        model_collections.load(archives=model_archives)
 
-            uidx = model_archives['uidx']
-            bad_count = model_archives['bad_count']
+        uidx = model_archives['uidx']
+        bad_count = model_archives['bad_count']
 
-            INFO("Done. Model reloaded.")
+        INFO("Done. Model reloaded.")
 
         if os.path.exists(saveto_best_optim_params):
             INFO("Reloading optimizer params...")
@@ -359,12 +363,11 @@ def train(FLAGS):
             optim.optim.load_state_dict(defaultdict(dict, **optimizer_params))
 
             INFO("Done. Optimizer params reloaded.")
+        elif uidx > 0:
+            INFO("Failed to reload optimizer params: {} does not exist".format(
+                saveto_best_optim_params))
 
         INFO('Done. Elapsed time {0}'.format(timer.toc()))
-
-    else:
-        uidx = 0
-        bad_count = 0
 
     if GlobalNames.USE_GPU:
         nmt_model = nmt_model.cuda()
@@ -575,8 +578,9 @@ def train(FLAGS):
                 summary_writer.add_scalar("bad_count", bad_count, uidx)
 
                 with open("./valid.txt", 'a') as f:
-                    f.write("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}\n".format(uidx, valid_loss, valid_bleu, lrate, bad_count))
-
+                    f.write("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}\n".format(uidx, valid_loss,
+                                                                                                   valid_bleu, lrate,
+                                                                                                   bad_count))
 
         training_progress_bar.close()
 
