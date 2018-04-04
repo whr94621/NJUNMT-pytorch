@@ -5,13 +5,51 @@ import tempfile
 import os
 
 from .bpe import Bpe
-from .common_utils import Vocab, batch_open, INFO
+from .common_utils import Vocab, batch_open, INFO, GlobalNames
 
 __all__ = [
     'TextDataset',
     'ZipDatasets',
     'DataIterator'
 ]
+
+random.seed(GlobalNames.SEED)
+
+def shuffle(*path):
+
+    f_handles = [open(p) for p in path]
+
+    # Read all the data
+    lines = []
+    for l in f_handles[0]:
+        line = [l.strip()] + [ff.readline().strip() for ff in f_handles[1:]]
+        lines.append(line)
+
+    # close file handles
+    [f.close() for f in f_handles]
+
+    # random shuffle the data
+    INFO('Shuffling data...')
+    random.shuffle(lines)
+    INFO('Done.')
+
+    # Set up temp files
+    f_handles = []
+    for p in path:
+        dirname, filename = os.path.split(p)
+        f_handles.append(tempfile.TemporaryFile(prefix=filename + '.shuf', dir=dirname, mode="a+"))
+
+    for line in lines:
+        for ii, f in enumerate(f_handles):
+            print(line[ii], file=f)
+
+    # release memory
+    lines = []
+
+    # Reset file handles
+    [f.seek(0) for f in f_handles]
+
+    return f_handles
 
 def shuffle_by_chunk(seq, chunck_size):
 
@@ -52,7 +90,8 @@ class TextDataset(Dataset):
                  vocab,
                  bpe_codes=None,
                  use_char=False,
-                 max_len=-1
+                 max_len=-1,
+                 shuffle=False
                  ):
 
         super(TextDataset, self).__init__()
@@ -67,6 +106,7 @@ class TextDataset(Dataset):
         self._vocab = vocab
         self._use_char = use_char
         self._max_len = max_len
+        self.shuffle = shuffle
 
         if bpe_codes is not None and len(bpe_codes) > 0:
             self._bpe = Bpe(codes=bpe_codes) # type: Bpe
@@ -88,6 +128,12 @@ class TextDataset(Dataset):
             for line in f:
                 yield self.apply(line)
 
+    def _shuffled_data_iter(self):
+        f_handles = shuffle(self._data_path)
+
+        for line in f_handles[0]:
+            yield self.apply(line)
+
     def apply(self, line):
         """
         Process one line
@@ -108,41 +154,11 @@ class TextDataset(Dataset):
             return None
         return line
 
-def shuffle(*datasets: TextDataset):
-
-    f_handles = [open(ds._data_path) for ds in datasets]
-
-    # Read all the data
-    lines = []
-    for l in f_handles[0]:
-        line = [l.strip()] + [ff.readline().strip() for ff in f_handles[1:]]
-        lines.append(line)
-
-    # close file handles
-    [f.close() for f in f_handles]
-
-    # random shuffle the data
-    INFO('Shuffling data...')
-    random.shuffle(lines)
-    INFO('Done.')
-
-    # Set up temp files
-    f_handles = []
-    for ds in datasets:
-        dirname, filename = os.path.split(ds._data_path)
-        f_handles.append(tempfile.TemporaryFile(prefix=filename + '.shuf', dir=dirname, mode="a+"))
-
-    for line in lines:
-        for ii, f in enumerate(f_handles):
-            print(line[ii], file=f)
-
-    # release memory
-    lines = []
-
-    # Reset file handles
-    [f.seek(0) for f in f_handles]
-
-    return f_handles
+    def data_iter(self):
+        if self.shuffle:
+            return self._shuffled_data_iter()
+        else:
+            return self._data_iter()
 
 class ZipDatasets(Dataset):
 
@@ -174,7 +190,7 @@ class ZipDatasets(Dataset):
 
     def _shuffled_data_iter(self):
 
-        f_handles = shuffle(*self.datasets)
+        f_handles = shuffle(*[ds._data_path for ds in self.datasets])
 
         for line in f_handles[0]:
             outs = [line] + [ff.readline() for ff in f_handles[1:]]

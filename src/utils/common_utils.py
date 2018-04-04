@@ -63,6 +63,8 @@ class GlobalNames:
 
     USE_GPU = False
 
+    SEED = 314159
+
 
 time_format = '%Y-%m-%d %H:%M:%S'
 
