@@ -17,6 +17,10 @@ from src.modules.criterions import NMTCritierion
 from src.utils.optim import Optimizer
 from src.utils.lr_scheduler import LossScheduler, NoamScheduler
 
+# Fix random seed
+torch.manual_seed(GlobalNames.SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(GlobalNames.SEED)
 
 def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=True):
     def _np_pad_batch_2D(samples, pad, batch_first=True, volatile=False, cuda=True):
