@@ -32,7 +32,7 @@ model_configs:
   dropout: 0.1
   n_max_seq: 100
   proj_share_weight: true
-  label_smoothing: 0.1
+  label_smoothing: 0.0
 
 optimizer_configs:
   optimizer: "adam"

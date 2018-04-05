@@ -327,8 +327,7 @@ def train(FLAGS):
                                 n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
 
-    critic = NMTCritierion(num_tokens=vocab_tgt.max_n_words,
-                           label_smoothing=model_configs['label_smoothing'])
+    critic = NMTCritierion(label_smoothing=model_configs['label_smoothing'])
 
     INFO(critic)
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
