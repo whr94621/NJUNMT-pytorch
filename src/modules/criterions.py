@@ -128,37 +128,40 @@ class Critierion(nn.Module):
                                             eval=eval,
                                             batch_dim=batch_dim,
                                             **kwargs)
-
 class NMTCritierion(Critierion):
     """
     TODO:
     1. Add label smoothing
     """
-    def __init__(self, num_tokens, padding_idx=Vocab.PAD, label_smoothing=0.0):
+    def __init__(self, padding_idx=Vocab.PAD, label_smoothing=0.0):
 
         super().__init__()
-        self.num_tokens = num_tokens
         self.padding_idx = padding_idx
+        self.label_smoothing = label_smoothing
 
         if label_smoothing > 0:
-            # When label smoothing is turned on,
-            # KL-divergence between q_{smoothed ground truth prob.}(w)
-            # and p_{prob. computed by model}(w) is minimized.
-            # If label smoothing value is set to zero, the loss
-            # is equivalent to NLLLoss or CrossEntropyLoss.
-            # All non-true labels are uniformly set to low-confidence.
-            self.criterion = nn.KLDivLoss(size_average=False)
-            one_hot = torch.randn(1, num_tokens)
-            one_hot.fill_(label_smoothing / (num_tokens - 2))
-            one_hot[0][padding_idx] = 0
-            self.register_buffer('one_hot', one_hot)
-        else:
-            weight = torch.ones(self.num_tokens)
-            weight[padding_idx] = 0
 
-            self.criterion = nn.NLLLoss(weight=weight, size_average=False)
+            self.criterion = nn.KLDivLoss(size_average=False)
+
+        else:
+            self.criterion = nn.NLLLoss(size_average=False, ignore_index=Vocab.PAD)
 
         self.confidence = 1.0 - label_smoothing
+
+    def _smooth_label(self, num_tokens):
+
+        # When label smoothing is turned on,
+        # KL-divergence between q_{smoothed ground truth prob.}(w)
+        # and p_{prob. computed by model}(w) is minimized.
+        # If label smoothing value is set to zero, the loss
+        # is equivalent to NLLLoss or CrossEntropyLoss.
+        # All non-true labels are uniformly set to low-confidence.
+
+        one_hot = torch.randn(1, num_tokens)
+        one_hot.fill_(self.label_smoothing / (num_tokens - 2))
+        one_hot[0][self.padding_idx] = 0
+
+        return one_hot
 
     def _bottle(self, v):
         return v.view(-1, v.size(2))
@@ -167,13 +170,22 @@ class NMTCritierion(Critierion):
 
         scores = generator(self._bottle(dec_outs)) # [batch_size * seq_len, d_words]
 
+        num_tokens = scores.size(-1)
+
         gtruth = labels.view(-1)
 
         if self.confidence < 1:
+
             tdata = gtruth.data
+
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
             log_likelihood = torch.gather(scores.data, 1, tdata.unsqueeze(1))
-            tmp_ = self.one_hot.repeat(gtruth.size(0), 1)
+
+            one_hot = self._smooth_label(num_tokens)
+            if labels.is_cuda:
+                one_hot = one_hot.cuda()
+
+            tmp_ = one_hot.repeat(gtruth.size(0), 1)
             tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
             if mask.dim() > 0:
                 log_likelihood.index_fill_(0, mask, 0)
