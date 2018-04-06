@@ -23,7 +23,7 @@ data_configs:
   eval_at_char_level: false
 
 model_configs:
-  model: Transformer
+  model: DL4MT
   n_layers: 2
   n_head: 3
   d_word_vec: &dim 24

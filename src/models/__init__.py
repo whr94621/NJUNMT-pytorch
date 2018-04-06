@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["Transformer"]
+__all__ = [
+    "Transformer",
+    "DL4MT"
+]
 
 
 from .transformer import Transformer
+from .dl4mt import DL4MT
 
 
