@@ -15,7 +15,7 @@ def get_attn_causal_mask(seq):
     :param seq: Input sequence.
         with shape [batch_size, time_steps, dim]
     '''
-    assert seq.dim() == 2
+    assert seq.dim() == 3
     attn_shape = (seq.size(0), seq.size(1), seq.size(1))
     subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
     subsequent_mask = torch.from_numpy(subsequent_mask)
@@ -117,7 +117,7 @@ class DecoderBlock(nn.Module):
 
         query_norm = self.layer_norm_2(query)
         mid, attn, enc_attn_cache = self.ctx_attn(enc_output, enc_output, query_norm,
-                                      mask=dec_enc_attn_mask, cache=enc_attn_cache)
+                                      mask=dec_enc_attn_mask, enc_attn_cache=enc_attn_cache)
 
         output = self.pos_ffn(self.dropout(mid) + query)
 
@@ -157,23 +157,32 @@ class Decoder(nn.Module):
 
         return caches
 
-    def forward(self, tgt_seq, enc_output, enc_mask, caches=None, self_attn_caches=None):
+    def forward(self, tgt_seq, enc_output, enc_mask, enc_attn_caches=None, self_attn_caches=None):
 
         batch_size, tgt_len = tgt_seq.size()
+
+        query_len = tgt_len
+        key_len = tgt_len
+
         src_len = enc_output.size(1)
 
         # Run the forward pass of the TransformerDecoder.
         emb = self.embeddings(tgt_seq)
 
+        if self_attn_caches is not None:
+            emb = emb[:,-1:].contiguous()
+            query_len = 1
+
         # Decode mask
-        dec_slf_attn_pad_mask = tgt_seq.data.eq(Vocab.PAD).unsqueeze(1).expand(batch_size, tgt_len, tgt_len)
-        dec_slf_attn_sub_mask = get_attn_causal_mask(tgt_seq)
+        dec_slf_attn_pad_mask = tgt_seq.data.eq(Vocab.PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
+        dec_slf_attn_sub_mask = get_attn_causal_mask(emb)
+
         dec_slf_attn_mask = torch.gt(dec_slf_attn_pad_mask + dec_slf_attn_sub_mask, 0)
-        dec_enc_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, tgt_len, src_len)
+        dec_enc_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, query_len, src_len)
 
         output = emb
-        self_attn_caches = []
-        enc_attn_caches = []
+        new_self_attn_caches = []
+        new_enc_attn_caches = []
         for i in range(self.num_layers):
 
             output, attn, self_attn_cache, enc_attn_cache \
@@ -181,14 +190,15 @@ class Decoder(nn.Module):
                                       enc_output,
                                       dec_slf_attn_mask,
                                       dec_enc_attn_mask,
-                                      enc_attn_cache=caches[i] if caches is not None else None)
+                                      enc_attn_cache=enc_attn_caches[i] if enc_attn_caches is not None else None,
+                                      self_attn_cache=self_attn_caches[i] if self_attn_caches is not None else None)
 
-            self_attn_caches += [self_attn_cache]
-            enc_attn_caches += [enc_attn_cache]
+            new_self_attn_caches += [self_attn_cache]
+            new_enc_attn_caches += [enc_attn_cache]
 
         output = self.out_layer_norm(output)
 
-        return output, self_attn_caches, enc_attn_caches
+        return output, new_self_attn_caches, new_enc_attn_caches
 
 class Generator(nn.Module):
 
@@ -287,13 +297,13 @@ class Transformer(nn.Module):
         for t in range(max_steps):
 
             inp_t = Variable(final_word_indices.view(-1, final_word_indices.size(-1)), volatile=True)
-            inp_t = inp_t[:,-1:].contiguous() # Select the last element
 
-            dec_output, self_attn_caches, enc_attn_caches = self.decoder(tgt_seq=inp_t,
-                                      enc_output=enc_output,
-                                      enc_mask=enc_mask,
-                                      caches=enc_attn_caches,
-                                      self_attn_caches=self_attn_caches) # [batch_size * beam_size, seq_len, dim]
+            dec_output, self_attn_caches, enc_attn_caches \
+                = self.decoder(tgt_seq=inp_t,
+                               enc_output=enc_output,
+                               enc_mask=enc_mask,
+                               enc_attn_caches=enc_attn_caches,
+                               self_attn_caches=self_attn_caches) # [batch_size * beam_size, seq_len, dim]
 
             next_scores = - self.generator(dec_output[:,-1].contiguous()).data # [batch_size * beam_size, n_words]
             next_scores = next_scores.view(batch_size, beam_size, -1)

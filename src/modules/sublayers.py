@@ -120,7 +120,7 @@ class MultiHeadedAttention(nn.Module):
 
         return [key_up, value_up]
 
-    def forward(self, key, value, query, mask=None, cache=None, self_attn_cache=None):
+    def forward(self, key, value, query, mask=None, enc_attn_cache=None, self_attn_cache=None):
         """
         Compute the context vector and the attention vectors.
 
@@ -143,12 +143,10 @@ class MultiHeadedAttention(nn.Module):
         batch_size = key.size(0)
         dim_per_head = self.dim_per_head
         head_count = self.head_count
-        key_len = key.size(1)
-        query_len = query.size(1)
 
         # 1) Project key, value, and query.
-        if cache is not None:
-            key_up, value_up = cache
+        if enc_attn_cache is not None:
+            key_up, value_up = enc_attn_cache
         else:
             key_up = self._split_heads(self.linear_keys(key)) # [batch_size, num_head, seq_len, dim_head]
             value_up = self._split_heads(self.linear_values(value))
@@ -161,11 +159,15 @@ class MultiHeadedAttention(nn.Module):
 
         query_up = self._split_heads(self.linear_query(query))
 
+        key_len = key_up.size(2)
+        query_len = query_up.size(2)
+
         # 2) Calculate and scale scores.
         query_up = query_up / math.sqrt(dim_per_head)
         scores = torch.matmul(query_up, key_up.transpose(2, 3))
 
         if mask is not None:
+
             mask = mask.unsqueeze(1).expand_as(scores)
             scores = scores.masked_fill(Variable(mask), -1e18)
 
