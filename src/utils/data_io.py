@@ -37,7 +37,7 @@ def shuffle(*path):
     f_handles = []
     for p in path:
         dirname, filename = os.path.split(p)
-        f_handles.append(tempfile.TemporaryFile(prefix=filename + '.shuf', dir=dirname, mode="a+"))
+        f_handles.append(tempfile.TemporaryFile(prefix=filename + '.shuf', dir=os.getcwd(), mode="a+"))
 
     for line in lines:
         for ii, f in enumerate(f_handles):
