@@ -26,7 +26,7 @@ class Encoder(nn.Module):
 
         self.gru = nn.GRU(input_size=input_size,
                           hidden_size=hidden_size,
-                          batch_first=False,
+                          batch_first=True,
                           bidirectional=True)
 
         self.linear_bridge = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size)
@@ -43,26 +43,26 @@ class Encoder(nn.Module):
     def bridge(self, context, mask):
         """
         :param context: Context tensor
-            with shape [ctx_len, batch_size, dim_ctx]
+            with shape [batch_size, ctx_len,dim_ctx]
         :param mask: Mask of context tensor
-            with shape [ctx_len, batch_size, dim_ctx]
+            with shape [batch_size, ctx_len]
         """
 
         no_pad_mask = Variable((1.0 - mask.float()))
 
-        ctx_mean = (context * no_pad_mask.unsqueeze(2)).sum(0) / no_pad_mask.unsqueeze(2).sum(0)
+        ctx_mean = (context * no_pad_mask.unsqueeze(2)).sum(1) / no_pad_mask.unsqueeze(2).sum(1)
 
         return F.tanh(self.linear_bridge(ctx_mean))
 
 
     def forward(self, x):
-
-        # mask is 0 if the value is a PAD
-        # x_mask is a tensor
-
+        """
+        :param x: Input sequence.
+            with shape [batch_size, seq_len, input_size]
+        """
         x_mask = x.data.eq(Vocab.PAD)
 
-        emb = self.embedding(x) # [seq_len, batch_size, dim]
+        emb = self.embedding(x)
 
         ctx, _ = self.gru(emb)
 
@@ -104,7 +104,7 @@ class Decoder(nn.Module):
 
     def forward(self, y, context, context_mask, hidden, one_step=False, cache=None):
 
-        emb = self.embedding(y)
+        emb = self.embedding(y) # [seq_len, batch_size, dim]
 
         if one_step:
             (out, attn), hidden = self.cgru_cell(emb, hidden, context, context_mask, cache)
@@ -114,6 +114,7 @@ class Decoder(nn.Module):
             attn = []
 
             for emb_t in torch.split(emb, split_size=1, dim=0):
+
                 (out_t, attn_t), hidden = self.cgru_cell(emb_t.squeeze(0), hidden, context, context_mask, cache)
 
                 out += [out_t]
@@ -126,7 +127,7 @@ class Decoder(nn.Module):
 
         logits = F.tanh(logits)
 
-        logits = self.dropout(logits)
+        logits = self.dropout(logits) # [seq_len, batch_size, dim]
 
         return logits, hidden
 
@@ -195,15 +196,15 @@ class DL4MT(nn.Module):
 
     def batch_beam_search(self, x, beam_size=5, max_steps=150):
 
-        batch_size = x.size(1)
+        batch_size = x.size(0)
 
         ctx, dec_init, ctx_mask = self.encoder(x)
         dec_cache = self.decoder.cgru_cell.compute_cache(ctx)
 
-        ctx = tile_batch(ctx, multiplier=beam_size, batch_dim=1)
-        dec_cache = tile_batch(dec_cache, multiplier=beam_size, batch_dim=1)
+        ctx = tile_batch(ctx, multiplier=beam_size, batch_dim=0)
+        dec_cache = tile_batch(dec_cache, multiplier=beam_size, batch_dim=0)
         hiddens = tile_batch(dec_init, multiplier=beam_size, batch_dim=0).data
-        ctx_mask = tile_batch(ctx_mask, multiplier=beam_size, batch_dim=1)
+        ctx_mask = tile_batch(ctx_mask, multiplier=beam_size, batch_dim=0)
 
         beam_mask = ctx_mask.new(batch_size, beam_size).fill_(1).float()
         dec_memory_len = ctx_mask.new(batch_size, beam_size).zero_().float()
@@ -289,8 +290,6 @@ class DL4MT(nn.Module):
                                     gather_shape=[batch_size * beam_size, -1])
 
     def forward(self, src_seq, tgt_seq=None, mode="train", **kwargs):
-
-        src_seq = src_seq.transpose(1, 0).contiguous() # length first
 
         if mode == "train":
             assert tgt_seq is not None
