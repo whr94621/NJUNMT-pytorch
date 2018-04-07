@@ -148,15 +148,6 @@ class Decoder(nn.Module):
     def dim_per_head(self):
         return self.d_model // self.n_head
 
-    def compute_caches(self, enc_output):
-
-        caches = []
-
-        for ii in range(self.num_layers):
-            caches.append(self.block_stack[ii].compute_cache(enc_output))
-
-        return caches
-
     def forward(self, tgt_seq, enc_output, enc_mask, enc_attn_caches=None, self_attn_caches=None):
 
         batch_size, tgt_len = tgt_seq.size()

@@ -113,13 +113,6 @@ class MultiHeadedAttention(nn.Module):
         return x.transpose(1, 2).contiguous() \
             .view(-1, seq_len, self.head_count * self.dim_per_head)
 
-    def compute_cache(self, key, value):
-
-        key_up = self._split_heads(self.linear_keys(key))
-        value_up = self._split_heads(self.linear_values(value))
-
-        return [key_up, value_up]
-
     def forward(self, key, value, query, mask=None, enc_attn_cache=None, self_attn_cache=None):
         """
         Compute the context vector and the attention vectors.
