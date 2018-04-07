@@ -120,7 +120,7 @@ class MultiHeadedAttention(nn.Module):
 
         return [key_up, value_up]
 
-    def forward(self, key, value, query, mask=None, cache=None):
+    def forward(self, key, value, query, mask=None, cache=None, self_attn_cache=None):
         """
         Compute the context vector and the attention vectors.
 
@@ -150,8 +150,14 @@ class MultiHeadedAttention(nn.Module):
         if cache is not None:
             key_up, value_up = cache
         else:
-            key_up = self._split_heads(self.linear_keys(key))
+            key_up = self._split_heads(self.linear_keys(key)) # [batch_size, num_head, seq_len, dim_head]
             value_up = self._split_heads(self.linear_values(value))
+
+        if self_attn_cache is not None:
+            key_up_prev, value_up_prev = self_attn_cache
+            # Append current key and value to the cache
+            key_up = torch.cat([key_up_prev, key_up], dim=2)
+            value_up = torch.cat([value_up_prev, value_up], dim=2)
 
         query_up = self._split_heads(self.linear_query(query))
 
@@ -176,4 +182,4 @@ class MultiHeadedAttention(nn.Module):
                   query_len, key_len)[:, 0, :, :] \
             .contiguous()
         # END CHECK
-        return output, top_attn
+        return output, top_attn, [key_up, value_up]
