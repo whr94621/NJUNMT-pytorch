@@ -363,7 +363,7 @@ def train(FLAGS):
         if os.path.exists(saveto_best_optim_params):
             INFO("Reloading optimizer params...")
             optimizer_params = torch.load(saveto_best_optim_params)
-            optim.optim.load_state_dict(defaultdict(dict, **optimizer_params))
+            optim.optim.load_state_dict(optimizer_params)
 
             INFO("Done. Optimizer params reloaded.")
         elif uidx > 0:
