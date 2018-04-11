@@ -31,14 +31,14 @@ class Encoder(nn.Module):
 
         self.linear_bridge = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size)
 
-    #     self._reset_parameters()
-    #
-    # def _reset_parameters(self):
-    #
-    #     for weight in self.gru.parameters():
-    #         my_init.rnn_init(weight.data)
-    #
-    #     my_init.default_init(self.linear_bridge.weight)
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+
+        for weight in self.gru.parameters():
+            my_init.rnn_init(weight.data)
+
+        my_init.default_init(self.linear_bridge.weight)
 
     def bridge(self, context, mask):
         """

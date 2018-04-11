@@ -17,14 +17,14 @@ class CGRUCell(nn.Module):
         self.attn = BahdanauAttention(query_size=hidden_size, key_size=self.context_size)
         self.gru2 = nn.GRUCell(input_size=self.context_size, hidden_size=hidden_size)
 
-    #     self._reset_parameters()
-    #
-    # def _reset_parameters(self):
-    #     for weight in self.gru1.parameters():
-    #         my_init.rnn_init(weight.data)
-    #
-    #     for weight in self.gru2.parameters():
-    #         my_init.rnn_init(weight.data)
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for weight in self.gru1.parameters():
+            my_init.rnn_init(weight.data)
+
+        for weight in self.gru2.parameters():
+            my_init.rnn_init(weight.data)
 
 
     @property
