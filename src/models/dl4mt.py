@@ -31,14 +31,14 @@ class Encoder(nn.Module):
 
         self.linear_bridge = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size)
 
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-
-        for weight in self.gru.parameters():
-            my_init.rnn_init(weight.data)
-
-        my_init.default_init(self.linear_bridge.weight)
+    #     self._reset_parameters()
+    #
+    # def _reset_parameters(self):
+    #
+    #     for weight in self.gru.parameters():
+    #         my_init.rnn_init(weight.data)
+    #
+    #     my_init.default_init(self.linear_bridge.weight)
 
     def bridge(self, context, mask):
         """
@@ -65,6 +65,7 @@ class Encoder(nn.Module):
         emb = self.embedding(x)
 
         ctx, _ = self.gru(emb)
+        ctx = ctx.contiguous()
 
         dec_init = self.bridge(ctx, x_mask)
 
@@ -116,7 +117,6 @@ class Decoder(nn.Module):
             for emb_t in torch.split(emb, split_size=1, dim=0):
 
                 (out_t, attn_t), hidden = self.cgru_cell(emb_t.squeeze(0), hidden, context, context_mask, cache)
-
                 out += [out_t]
                 attn += [attn_t]
 

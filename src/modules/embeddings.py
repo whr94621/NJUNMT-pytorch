@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 from src.utils import Vocab
+import src.utils.init as my_init
 
 
 class Embeddings(nn.Module):
@@ -36,7 +37,11 @@ class Embeddings(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.uniform(self.embeddings.weight.data, - 1.0 / self.scale, 1.0 / self.scale)
+        if self.add_position_embedding:
+            nn.init.uniform(self.embeddings.weight.data, - 1.0 / self.scale, 1.0 / self.scale)
+        else:
+            my_init.embedding_init(self.embeddings.weight.data)
+
         self.embeddings.weight.data[self.padding_idx].fill_(0.0)
 
     def _add_pos_embedding(self, x, min_timescale=1.0, max_timescale=1.0e4):
@@ -65,8 +70,9 @@ class Embeddings(nn.Module):
     def forward(self, x):
 
         emb = self.embeddings(x)
-        emb = emb * self.scale # rescale to [-1.0, 1.0]
+         # rescale to [-1.0, 1.0]
         if self.add_position_embedding:
+            emb = emb * self.scale
             emb += self._add_pos_embedding(emb)
 
         if self.dropout is not None:

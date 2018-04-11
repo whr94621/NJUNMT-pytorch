@@ -431,11 +431,11 @@ def train(FLAGS):
 
                 if scheduler.step(global_step=uidx, loss=valid_loss):
 
-                    new_lr = list(optim.get_lrate())[0]
-                    summary_writer.add_scalar("lrate", new_lr, global_step=uidx)
-
                     if training_configs['decay_method'] == "loss":
                         nmt_model.load_state_dict(params_best_loss)
+
+                new_lr = list(optim.get_lrate())[0]
+                summary_writer.add_scalar("lrate", new_lr, global_step=uidx)
 
             seqs_x, seqs_y = batch
 

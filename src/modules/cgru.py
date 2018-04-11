@@ -1,10 +1,7 @@
-import torch
 import torch.nn as nn
-from torch.nn import functional as F
-from torch.autograd import Variable
 
 from src.utils import init as my_init
-from .attention import BahdanauAttention_
+from .attention import BahdanauAttention
 
 class CGRUCell(nn.Module):
 
@@ -17,17 +14,17 @@ class CGRUCell(nn.Module):
         self.hidden_size = hidden_size
 
         self.gru1 = nn.GRUCell(input_size=input_size, hidden_size=hidden_size)
-        self.attn = BahdanauAttention_(query_size=hidden_size, key_size=self.context_size)
+        self.attn = BahdanauAttention(query_size=hidden_size, key_size=self.context_size)
         self.gru2 = nn.GRUCell(input_size=self.context_size, hidden_size=hidden_size)
 
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for weight in self.gru1.parameters():
-            my_init.rnn_init(weight.data)
-
-        for weight in self.gru2.parameters():
-            my_init.rnn_init(weight.data)
+    #     self._reset_parameters()
+    #
+    # def _reset_parameters(self):
+    #     for weight in self.gru1.parameters():
+    #         my_init.rnn_init(weight.data)
+    #
+    #     for weight in self.gru2.parameters():
+    #         my_init.rnn_init(weight.data)
 
 
     @property
