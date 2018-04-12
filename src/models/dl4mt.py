@@ -7,6 +7,7 @@ from src.utils.common_utils import Vocab
 import src.utils.init as my_init
 from src.modules.embeddings import Embeddings
 from src.modules.cgru import CGRUCell
+from src.modules.rnn import RNN
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
 
 class Encoder(nn.Module):
@@ -24,12 +25,8 @@ class Encoder(nn.Module):
                                     dropout=0.0,
                                     add_position_embedding=False)
 
-        self.gru = nn.GRU(input_size=input_size,
-                          hidden_size=hidden_size,
-                          batch_first=True,
-                          bidirectional=True)
-
-        self.linear_bridge = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size)
+        self.gru = RNN(type="gru", batch_first=True, input_size=input_size, hidden_size=hidden_size,
+                       bidirectional=True)
 
         self._reset_parameters()
 
@@ -37,23 +34,6 @@ class Encoder(nn.Module):
 
         for weight in self.gru.parameters():
             my_init.rnn_init(weight.data)
-
-        my_init.default_init(self.linear_bridge.weight)
-
-    def bridge(self, context, mask):
-        """
-        :param context: Context tensor
-            with shape [batch_size, ctx_len,dim_ctx]
-        :param mask: Mask of context tensor
-            with shape [batch_size, ctx_len]
-        """
-
-        no_pad_mask = Variable((1.0 - mask.float()))
-
-        ctx_mean = (context * no_pad_mask.unsqueeze(2)).sum(1) / no_pad_mask.unsqueeze(2).sum(1)
-
-        return F.tanh(self.linear_bridge(ctx_mean))
-
 
     def forward(self, x):
         """
@@ -64,12 +44,9 @@ class Encoder(nn.Module):
 
         emb = self.embedding(x)
 
-        ctx, _ = self.gru(emb)
-        ctx = ctx.contiguous()
+        ctx, _ = self.gru(emb, x_mask)
 
-        dec_init = self.bridge(ctx, x_mask)
-
-        return ctx, dec_init, x_mask
+        return ctx, x_mask
 
 
 class Decoder(nn.Module):
@@ -78,9 +55,14 @@ class Decoder(nn.Module):
                  n_words,
                  input_size,
                  hidden_size,
+                 bridge_type="mlp",
                  dropout_rate=0.0):
 
         super(Decoder, self).__init__()
+
+        self.bridge_type = bridge_type
+        self.hidden_size = hidden_size
+        self.context_size = hidden_size * 2
 
         self.embedding = Embeddings(num_embeddings=n_words,
                                     embedding_dim=input_size,
@@ -97,11 +79,41 @@ class Decoder(nn.Module):
 
         self._reset_parameters()
 
+        self._build_bridge()
+
     def _reset_parameters(self):
 
-        my_init.default_init(self.linear_input.weight)
-        my_init.default_init(self.linear_hidden.weight)
-        my_init.default_init(self.linear_ctx.weight)
+        my_init.default_init(self.linear_input.weight.data)
+        my_init.default_init(self.linear_hidden.weight.data)
+        my_init.default_init(self.linear_ctx.weight.data)
+
+    def _build_bridge(self):
+
+        if self.bridge_type == "mlp":
+            self.linear_bridge = nn.Linear(in_features=self.context_size, out_features=self.hidden_size)
+            my_init.default_init(self.linear_bridge.weight.data)
+        elif self.bridge_type == "zero":
+            pass
+        else:
+            raise ValueError("Unknown bridge type {0}".format(self.bridge_type))
+
+    def init_decoder(self, context, mask):
+
+        # Generate init hidden
+        if self.bridge_type == "mlp":
+            no_pad_mask = Variable((1.0 - mask.float()))
+            ctx_mean = (context * no_pad_mask.unsqueeze(2)).sum(1) / no_pad_mask.unsqueeze(2).sum(1)
+            dec_init = F.tanh(self.linear_bridge(ctx_mean))
+        elif self.bridge_type == "zero":
+            batch_size = context.size(0)
+            dec_init = Variable(context.data.new(batch_size, self.hidden_size).zero_())
+        else:
+            raise ValueError("Unknown bridge type {0}".format(self.bridge_type))
+
+        dec_cache = self.cgru_cell.compute_cache(context)
+
+        return dec_init, dec_cache
+
 
     def forward(self, y, context, context_mask, hidden, one_step=False, cache=None):
 
@@ -162,14 +174,15 @@ class Generator(nn.Module):
 
 class DL4MT(nn.Module):
 
-    def __init__(self, n_src_vocab, n_tgt_vocab, d_word_vec, d_model, dropout, proj_share_weight, **kwargs):
+    def __init__(self, n_src_vocab, n_tgt_vocab, d_word_vec, d_model, dropout,
+                 proj_share_weight, bridge_type="mlp", **kwargs):
 
         super().__init__()
 
         self.encoder = Encoder(n_words=n_src_vocab, input_size=d_word_vec, hidden_size=d_model)
 
         self.decoder = Decoder(n_words=n_tgt_vocab, input_size=d_word_vec, hidden_size=d_model,
-                               dropout_rate=dropout)
+                               dropout_rate=dropout, bridge_type=bridge_type)
 
         if proj_share_weight is False:
             generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=Vocab.PAD)
@@ -181,9 +194,9 @@ class DL4MT(nn.Module):
 
     def force_teaching(self, x, y):
 
-        ctx, dec_init, ctx_mask = self.encoder(x)
+        ctx, ctx_mask = self.encoder(x)
 
-        dec_cache = self.decoder.cgru_cell.compute_cache(ctx)
+        dec_init, dec_cache = self.decoder.init_decoder(ctx, ctx_mask)
 
         logits, _ = self.decoder(y,
                                  context=ctx,
@@ -198,8 +211,8 @@ class DL4MT(nn.Module):
 
         batch_size = x.size(0)
 
-        ctx, dec_init, ctx_mask = self.encoder(x)
-        dec_cache = self.decoder.cgru_cell.compute_cache(ctx)
+        ctx, ctx_mask = self.encoder(x)
+        dec_init, dec_cache = self.decoder.init_decoder(ctx, ctx_mask)
 
         ctx = tile_batch(ctx, multiplier=beam_size, batch_dim=0)
         dec_cache = tile_batch(dec_cache, multiplier=beam_size, batch_dim=0)
