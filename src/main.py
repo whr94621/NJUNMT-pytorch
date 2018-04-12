@@ -381,7 +381,8 @@ def train(FLAGS):
         scheduler = LossScheduler(optimizer=optim,
                                   max_patience=training_configs['lrate_decay_patience'],
                                   min_lr=training_configs['min_lrate'],
-                                  decay_scale=0.5
+                                  decay_scale=0.5,
+                                  warmup_steps=training_configs['decay_warmup_steps']
                                   )
 
     elif training_configs['decay_method'] == "noam":
