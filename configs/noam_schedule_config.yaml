@@ -8,8 +8,8 @@ data_configs:
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en.0"
   bleu_valid_reference: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en."
   dictionaries:
-    - "/home/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
-    - "/home/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
+    - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
+    - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
   bpe_codes:
     - ""
     - ""
@@ -52,7 +52,7 @@ training_configs:
   disp_freq: 100 # Frequency to print information
   save_freq: 1000 # Frequency to save the model
   loss_valid_freq: &decay_freq 100
-  bleu_valid_freq: 100
+  bleu_valid_freq: 1000
   early_stop_patience: 20
   decay_method: "noam" # ["loss" | "noam"]
   decay_freq: 1 # Must be 1 when decay_method is 1
