@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-import src.utils.nest as nest
-from src.utils.common_utils import Vocab
+import src.utils.init as my_init
 
 
 def sort_batch(seq_mask, batch_dim=0):
@@ -30,12 +29,18 @@ class RNN(nn.Module):
         elif self.type == "lstm":
             self.rnn = nn.LSTM(batch_first=batch_first, **kwargs)
 
+        self._reset_parameters()
+
     @property
     def batch_dim(self):
         if self.batch_first:
             return 0
         else:
             return 1
+
+    def _reset_parameters(self):
+        for weight in self.rnn.parameters():
+            my_init.rnn_init(weight.data)
 
     def forward(self, input, input_mask, h_0=None):
 

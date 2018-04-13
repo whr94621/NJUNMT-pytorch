@@ -28,13 +28,6 @@ class Encoder(nn.Module):
         self.gru = RNN(type="gru", batch_first=True, input_size=input_size, hidden_size=hidden_size,
                        bidirectional=True)
 
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-
-        for weight in self.gru.parameters():
-            my_init.rnn_init(weight.data)
-
     def forward(self, x):
         """
         :param x: Input sequence.
@@ -163,7 +156,7 @@ class Generator(nn.Module):
 
     def _reset_parameters(self):
 
-        my_init.default_init(self.proj.weight)
+        my_init.embedding_init(self.proj.weight)
 
 
     def forward(self, input):
