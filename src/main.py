@@ -575,7 +575,8 @@ def train(FLAGS):
                 else:
                     bad_count += 1
 
-                    if bad_count >= training_configs['early_stop_patience']:
+                    # At least one epoch should be traversed
+                    if bad_count >= training_configs['early_stop_patience'] and eidx > 0:
                         is_early_stop = True
                         WARN("Early Stop!")
 
