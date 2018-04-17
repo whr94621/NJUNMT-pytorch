@@ -249,6 +249,10 @@ def train(FLAGS):
     optimizer_configs = configs['optimizer_configs']
     training_configs = configs['training_configs']
 
+    if "seed" in training_configs:
+        # Set random seed
+        GlobalNames.SEED = training_configs['seed']
+
     if 'buffer_size' not in training_configs:
         training_configs['buffer_size'] = 100 * training_configs['batch_size']
 

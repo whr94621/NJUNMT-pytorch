@@ -45,6 +45,7 @@ optimizer_configs:
       - 0.998
 
 training_configs:
+  seed: 1234
   max_epochs: 1000000
   shuffle: false
   use_bucket: true # Whether to use bucket. If true, model will run faster while a little bit performance regression.
