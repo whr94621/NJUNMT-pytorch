@@ -7,7 +7,7 @@ class LearningRateScheduler(object):
         self.optimizer = optimizer # type:Optimizer
         self.min_lr = min_lr
 
-    def should_scheduler(self, **kwargs):
+    def should_scheduler(self, global_step, **kwargs):
         """Condition to schedule learning rate
 
         Whether to anneal learning rate given some criteria.
@@ -21,7 +21,7 @@ class LearningRateScheduler(object):
 
     def step(self, global_step, **kwargs):
 
-        if self.should_scheduler(**kwargs):
+        if self.should_scheduler(global_step, **kwargs):
             new_lrs = []
 
             for old_lr in self.optimizer.get_lrate():
@@ -36,18 +36,24 @@ class LearningRateScheduler(object):
 
 class LossScheduler(LearningRateScheduler):
 
-    def __init__(self, optimizer, max_patience, min_lr=-1.0, decay_scale=0.5):
+    def __init__(self, optimizer, max_patience, min_lr=-1.0, decay_scale=0.5, warmup_steps=-1):
 
         super().__init__(optimizer, min_lr)
 
         self.max_patience = max_patience
         self.decay_scale = decay_scale
         self.min_lr = min_lr
+        self.warmup_steps = warmup_steps
 
         self._max_loss = 1e12
         self._bad_counts = 0
 
-    def should_scheduler(self, loss, **kwargs):
+    def should_scheduler(self, global_step, **kwargs):
+
+        loss = kwargs['loss']
+
+        if global_step <= self.warmup_steps:
+            return False
 
         if loss < self._max_loss:
             self._max_loss = loss
@@ -77,7 +83,7 @@ class NoamScheduler(LearningRateScheduler):
 
         self.warmup_steps = warmup_steps
 
-    def should_scheduler(self, **kwargs):
+    def should_scheduler(self, global_step, **kwargs):
         return True
 
     def get_new_lr(self, old_lr, global_step, **kwargs):

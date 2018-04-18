@@ -1,6 +1,17 @@
-# README
+# NJUNMT-pytorch
 
-This is our in-house implementation of Transformer model in "[Attenion is all you need](https://arxiv.org/abs/1706.03762)".
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+NJUNMT-pytorch is an open-source toolkit for neural machine translation.
+This toolkit is highly research-oriented, which contains some common baseline
+model:
+
+- [DL4MT-tutorial](https://github.com/nyu-dl/dl4mt-tutorial): A rnn-base nmt model widely used as baseline. To our knowledge, this is the
+only pytorch implementation which is exactly the same as original model.([nmtpytorch](https://github.com/lium-lst/nmtpytorch) is another pytorch implementation but with minor structure difference.)
+
+- [Attention is all you need](https://arxiv.org/abs/1706.03762): A strong nmt model introduced by Google, which only relies on attenion
+mechanism. Our implementation is different from the official [tensor2tenosr](https://github.com/tensorflow/tensor2tensor)
+
 
 # Requirements
 
@@ -31,20 +42,17 @@ valid loss as schedule criterion.
 ```noam_schedule_config.yaml``` is the configure file using
 schedule method in google's paper.
 
+```dl4mt_config.yaml```
+
 ## Training
 See training script ```./scripts/train.sh```
 
 ## Translation
 See translation script ```./scripts/translation.sh```
 
-# Performance
+# Benchmark
 
-| Decay Method | Use Bucket | MT03(dev) | MT04  | MT05  | MT06  |
-|--------------|------------|-----------|-------|-------|-------|
-| Loss         | TRUE       | 40.22     | 41.61 | 37.17 | 35.39 |
-| Loss         | FALSE      | 41.48     | 42.31 | 39.43 | 36.85 |
-| Noam         | TRUE       | 40.50     | 41.90 | 38.19 | 36.12 |
-| Noam         | FALSE      | 41.80     | 42.52 | 39.05 | 36.90 |
+See [BENCHMARK.md](./BENCHMARK.md)
 
 # Q&A
 

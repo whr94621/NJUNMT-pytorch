@@ -249,6 +249,10 @@ def train(FLAGS):
     optimizer_configs = configs['optimizer_configs']
     training_configs = configs['training_configs']
 
+    if "seed" in training_configs:
+        # Set random seed
+        GlobalNames.SEED = training_configs['seed']
+
     if 'buffer_size' not in training_configs:
         training_configs['buffer_size'] = 100 * training_configs['batch_size']
 
@@ -381,7 +385,8 @@ def train(FLAGS):
         scheduler = LossScheduler(optimizer=optim,
                                   max_patience=training_configs['lrate_decay_patience'],
                                   min_lr=training_configs['min_lrate'],
-                                  decay_scale=0.5
+                                  decay_scale=0.5,
+                                  warmup_steps=training_configs['decay_warmup_steps']
                                   )
 
     elif training_configs['decay_method'] == "noam":
@@ -431,11 +436,11 @@ def train(FLAGS):
 
                 if scheduler.step(global_step=uidx, loss=valid_loss):
 
-                    new_lr = list(optim.get_lrate())[0]
-                    summary_writer.add_scalar("lrate", new_lr, global_step=uidx)
-
                     if training_configs['decay_method'] == "loss":
                         nmt_model.load_state_dict(params_best_loss)
+
+                new_lr = list(optim.get_lrate())[0]
+                summary_writer.add_scalar("lrate", new_lr, global_step=uidx)
 
             seqs_x, seqs_y = batch
 
@@ -574,7 +579,8 @@ def train(FLAGS):
                 else:
                     bad_count += 1
 
-                    if bad_count >= training_configs['early_stop_patience']:
+                    # At least one epoch should be traversed
+                    if bad_count >= training_configs['early_stop_patience'] and eidx > 0:
                         is_early_stop = True
                         WARN("Early Stop!")
 
