@@ -227,6 +227,42 @@ def bleu_validation(uidx,
     return bleu_v
 
 
+def load_pretrained_model(nmt_model, pretrain_path, map_dict=None, exclude_prefix=None):
+    """
+    Args:
+        nmt_model: model.
+        pretrain_path ('str'): path to pretrained model.
+        map_dict ('dict'): mapping specific parameter names to those names
+            in current model.
+        exclude_prefix ('dict'): excluding parameters with specific names
+            for pretraining.
+
+    Raises:
+        ValueError: Size not match, parameter name not match or others.
+
+    """
+    if exclude_prefix is None:
+        exclude_prefix = []
+    if pretrain_path != "":
+        INFO("Loading pretrained model from {}".format(pretrain_path))
+        pretrain_params = torch.load(pretrain_path)
+        for name, params in pretrain_params.items():
+            flag = False
+            for pp in exclude_prefix:
+                if name.startswith(pp):
+                    flag = True
+                    break
+            if flag:
+                continue
+            INFO("Loading param: {}...".format(name))
+            try:
+                nmt_model.load_state_dict({name: params}, strict=False)
+            except Exception as e:
+                WARN("{}: {}".format(str(Exception), e))
+
+        INFO("Pretrained model loaded.")
+
+
 def train(FLAGS):
     """
     FLAGS:
@@ -350,7 +386,6 @@ def train(FLAGS):
 
     # Whether Reloading model
     if FLAGS.reload is True and os.path.exists(saveto_best_model):
-        INFO('Reloading model...')
         timer.tic()
         INFO("Reloading model...")
         params = torch.load(saveto_best_model)
@@ -375,6 +410,10 @@ def train(FLAGS):
                 saveto_best_optim_params))
 
         INFO('Done. Elapsed time {0}'.format(timer.toc()))
+    # New training. Check if pretraining needed
+    else:
+        # pretrain
+        load_pretrained_model(nmt_model, FLAGS.pretrain_path, exclude_prefix=None)
 
     if GlobalNames.USE_GPU:
         nmt_model = nmt_model.cuda()
