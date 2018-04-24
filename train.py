@@ -1,4 +1,5 @@
 import argparse
+
 from src.main import train
 
 parser = argparse.ArgumentParser()
@@ -19,6 +20,8 @@ parser.add_argument('--debug', action="store_true",
 
 parser.add_argument('--use_gpu', action="store_true",
                     help="Whether to use GPU.")
+
+parser.add_argument('--pretrain_path', type=str, default="", help="The path for pretrained model.")
 
 if __name__ == '__main__':
 
