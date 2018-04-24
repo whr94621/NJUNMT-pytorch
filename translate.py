@@ -9,14 +9,8 @@ parser.add_argument("--model_name", type=str,
 parser.add_argument("--source_path", type=str,
                     help="""Path to source file.""")
 
-parser.add_argument("--source_dict_path", type=str,
-                    help="""Path to source dict""")
-
 parser.add_argument("--source_bpe_codes", type=str,
                     help="""Path to source bpe codes""")
-
-parser.add_argument("--target_dict_path", type=str,
-                    help="""Path to target dict.""")
 
 parser.add_argument("--model_path", type=str,
                     help="""Path to model files.""")

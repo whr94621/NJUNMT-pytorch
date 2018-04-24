@@ -613,8 +613,8 @@ def translate(FLAGS):
     timer.tic()
 
     # Generate target dictionary
-    vocab_src = Vocab(dict_path=FLAGS.source_dict_path, max_n_words=data_configs['n_words'][0])
-    vocab_tgt = Vocab(dict_path=FLAGS.target_dict_path, max_n_words=data_configs['n_words'][1])
+    vocab_src = Vocab(dict_path=data_configs['dictionaries'][0], max_n_words=data_configs['n_words'][0])
+    vocab_tgt = Vocab(dict_path=data_configs['dictionaries'][1], max_n_words=data_configs['n_words'][1])
 
     valid_dataset = TextDataset(data_path=FLAGS.source_path,
                                 vocab=vocab_src,
