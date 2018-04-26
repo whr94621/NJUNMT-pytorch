@@ -13,7 +13,7 @@ def sort_batch(seq_mask, batch_dim=0):
     slens, sidxs = torch.sort(olens, descending=True)
     oidxs = torch.sort(sidxs)[1]
 
-    return Variable(oidxs), Variable(sidxs), slens.tolist()
+    return oidxs, sidxs, slens.tolist()
 
 class RNN(nn.Module):
 
@@ -40,7 +40,7 @@ class RNN(nn.Module):
 
     def _reset_parameters(self):
         for weight in self.rnn.parameters():
-            my_init.rnn_init(weight.data)
+            my_init.rnn_init(weight)
 
     def forward(self, input, input_mask, h_0=None):
 
@@ -61,7 +61,7 @@ class RNN(nn.Module):
             h_0_sorted = None
 
         # 2. RNN compute
-        input_packed = pack_padded_sequence(input=input_sorted, lengths=slens, batch_first=self.batch_first)
+        input_packed = pack_padded_sequence(input_sorted, slens, batch_first=self.batch_first)
 
         out_packed, h_n_sorted = self.rnn(input_packed, h_0_sorted)
 
