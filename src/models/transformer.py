@@ -255,6 +255,7 @@ class Transformer(nn.Module):
             assert tgt_seq is not None
             return self.force_teaching(src_seq, tgt_seq)
         elif mode == "infer":
+            torch.no_grad()
             return self.batch_beam_search(src_seq=src_seq, **kwargs)
 
     def force_teaching(self, src_seq, tgt_seq):
@@ -287,7 +288,7 @@ class Transformer(nn.Module):
 
         for t in range(max_steps):
 
-            inp_t = Variable(final_word_indices.view(-1, final_word_indices.size(-1)), volatile=True)
+            inp_t = final_word_indices.view(-1, final_word_indices.size(-1))
 
             dec_output, self_attn_caches, enc_attn_caches \
                 = self.decoder(tgt_seq=inp_t,
@@ -333,12 +334,13 @@ class Transformer(nn.Module):
                                                  gather_shape=[-1])
 
             self_attn_caches = nest.map_structure(
-                lambda t: Variable(tensor_gather_helper(gather_indices=next_beam_ids,
+                lambda t: tensor_gather_helper(gather_indices=next_beam_ids,
                                                gather_from=t.data,
                                                batch_size=batch_size,
                                                beam_size=beam_size,
                                                gather_shape=[batch_size * beam_size, self.decoder.n_head,
-                                                             -1, self.decoder.dim_per_head]), volatile=True), self_attn_caches)
+                                                             -1, self.decoder.dim_per_head]),
+                self_attn_caches)
 
             # If next_word_ids is EOS, beam_mask_ should be 0.0
             beam_mask_ = 1.0 - next_word_ids.eq(Vocab.EOS).float()
