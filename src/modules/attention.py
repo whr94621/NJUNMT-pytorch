@@ -59,7 +59,7 @@ class BahdanauAttention(nn.Module):
 
     def _reset_parameters(self):
         for weight in self.parameters():
-            my_init.default_init(weight.data)
+            my_init.default_init(weight)
 
     def compute_cache(self, memory):
 

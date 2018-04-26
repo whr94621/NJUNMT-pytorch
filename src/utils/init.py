@@ -3,36 +3,20 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 def default_init(tensor):
-
-    if isinstance(tensor, Variable):
-        default_init(tensor.data)
-        return tensor
-
     if tensor.ndimension() == 1:
-        nn.init.constant(tensor, val=0.0)
+        nn.init.constant_(tensor, val=0.0)
     else:
-        nn.init.xavier_normal(tensor)
+        nn.init.xavier_normal_(tensor)
 
     return tensor
 
 def embedding_init(tensor, val=0.1):
-
-    if isinstance(tensor, Variable):
-        embedding_init(tensor.data)
-        return tensor
-
-    nn.init.uniform(tensor, -val, val)
+    nn.init.uniform_(tensor, -val, val)
 
     return tensor
 
 def rnn_init(tensor):
-
-    if isinstance(tensor, Variable):
-        rnn_init(tensor.data)
-        return tensor
-
     if tensor.ndimension() != 2:
-
         return default_init(tensor)
 
     r, c = tensor.size()
@@ -53,7 +37,8 @@ def rnn_init(tensor):
 
     init_tensor = torch.cat(sub_tensors, dim=dim) # [r, c]
 
-    tensor.copy_(init_tensor)
+    with torch.no_grad():  # inplace op should be wrapped in no_grad mode.
+        tensor.copy_(init_tensor)
 
     return tensor
 
