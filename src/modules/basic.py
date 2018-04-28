@@ -34,7 +34,7 @@ class Linear(nn.Module):
         return self.linear(x)
 
     def reset_parameters(self):
-        init.default_init(self.linear.weight.data)
+        init.default_init(self.linear.weight)
 
 class BottleLinear(Bottle, Linear):
     ''' Perform the reshape routine before and after a linear projection '''

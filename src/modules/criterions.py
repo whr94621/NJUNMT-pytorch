@@ -107,7 +107,7 @@ class Critierion(nn.Module):
 
             loss = self._compute_loss(generator=generator, **shard) # type: Variable
             loss.div(normalization).backward()
-            loss_data += loss.data.clone()
+            loss_data += loss.detach().clone()
 
         return loss_data / normalization
 
@@ -117,7 +117,7 @@ class Critierion(nn.Module):
 
             if eval is False:
                 loss.backward()
-                return loss.data.clone()
+                return loss.detach().clone()
             else:
                 return loss.clone()
 
@@ -179,7 +179,7 @@ class NMTCritierion(Critierion):
             tdata = gtruth.data
 
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
-            log_likelihood = torch.gather(scores.data, 1, tdata.unsqueeze(1))
+            log_likelihood = torch.gather(scores, 1, tdata.unsqueeze(1))
 
             one_hot = self._smooth_label(num_tokens)
             if labels.is_cuda:

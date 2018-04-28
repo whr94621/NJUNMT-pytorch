@@ -22,8 +22,17 @@ torch.manual_seed(GlobalNames.SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(GlobalNames.SEED)
 
-def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=True):
-    def _np_pad_batch_2D(samples, pad, batch_first=True, volatile=False, cuda=True):
+
+def prepare_data(seqs_x, seqs_y=None, eval=False, cuda=False, batch_first=True):
+    """
+    Args:
+        eval ('bool'): indicator for eval/infer.
+
+    Returns:
+
+    """
+
+    def _np_pad_batch_2D(samples, pad, batch_first=True, cuda=True):
 
         batch_size = len(samples)
 
@@ -38,22 +47,25 @@ def prepare_data(seqs_x, seqs_y=None, volatile=False, cuda=False, batch_first=Tr
         if batch_first is False:
             x_np = np.transpose(x_np, [1, 0])
 
-        x = Variable(torch.LongTensor(x_np).contiguous(),
-                     volatile=volatile)
+        x = torch.tensor(x_np)
+
         if cuda is True:
             x = x.cuda()
         return x
 
+    grad_mode = not eval  # True for training, False for eval/infer
+    torch.set_grad_enabled(grad_mode)  # enable grad for training, disable for eval/infer
+
     seqs_x = list(map(lambda s: [Vocab.BOS] + s + [Vocab.EOS], seqs_x))
     x = _np_pad_batch_2D(samples=seqs_x, pad=Vocab.PAD,
-                         volatile=volatile, cuda=cuda, batch_first=batch_first)
+                         cuda=cuda, batch_first=batch_first)
 
     if seqs_y is None:
         return x
 
     seqs_y = list(map(lambda s: [Vocab.BOS] + s + [Vocab.EOS], seqs_y))
     y = _np_pad_batch_2D(seqs_y, pad=Vocab.PAD,
-                         volatile=volatile, cuda=cuda, batch_first=batch_first)
+                         cuda=cuda, batch_first=batch_first)
 
     return x, y
 
@@ -92,7 +104,7 @@ def compute_forward(model,
         pred = model.generator(dec_outs).data.max(2)[1]  # [batch_size, seq_len]
         num_correct = y_label.data.eq(pred).float().masked_select(mask).sum() / normalization
 
-        return loss.data[0], num_correct
+        return loss.item(), num_correct
 
     return loss
 
@@ -122,7 +134,7 @@ def loss_validation(model, critic, valid_iterator):
         n_sents += len(seqs_x)
         n_tokens += sum(len(s) for s in seqs_y)
 
-        x, y = prepare_data(seqs_x, seqs_y, volatile=True, cuda=GlobalNames.USE_GPU)
+        x, y = prepare_data(seqs_x, seqs_y, eval=True, cuda=GlobalNames.USE_GPU)
 
         loss, num_correct = compute_forward(model=model,
                                             critic=critic,
@@ -183,7 +195,7 @@ def bleu_validation(uidx,
         seqs_x = batch[0]
         infer_progress_bar.update(len(seqs_x))
 
-        x = prepare_data(seqs_x, volatile=True, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x, eval=True, cuda=GlobalNames.USE_GPU)
 
         word_ids = model(x, mode="infer", beam_size=5)
 
@@ -491,7 +503,7 @@ def train(FLAGS):
 
             # Prepare data
             x, y = prepare_data(seqs_x, seqs_y,
-                                volatile=False,
+                                eval=False,
                                 cuda=GlobalNames.USE_GPU)
 
             #  Train for one batch
@@ -712,7 +724,7 @@ def translate(FLAGS):
 
         batch_size_t = len(seqs_x)
 
-        x = prepare_data(seqs_x=seqs_x, volatile=True, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x=seqs_x, eval=True, cuda=GlobalNames.USE_GPU)
 
         word_ids = nmt_model(x, mode="infer", beam_size=5)
 
@@ -748,7 +760,7 @@ def translate(FLAGS):
 
     with batch_open(outputs, 'w') as handles:
         for trans in translation:
-            for i in range(FLAGS.beam_size):
+            for i in range(keep_n):
                 if i < len(trans):
                     handles[i].write('%s\n' % trans[i])
                 else:

@@ -119,7 +119,7 @@ class Decoder(nn.Module):
             out = []
             attn = []
 
-            for emb_t in torch.split(emb, split_size=1, dim=0):
+            for emb_t in torch.split(emb, split_size_or_sections=1, dim=0):
 
                 (out_t, attn_t), hidden = self.cgru_cell(emb_t.squeeze(0), hidden, context, context_mask, cache)
                 out += [out_t]
@@ -219,8 +219,8 @@ class DL4MT(nn.Module):
 
         for t in range(max_steps):
 
-            logits, hiddens = self.decoder(y=Variable(final_word_indices[:,:,-1].contiguous().view(batch_size * beam_size, ), volatile=True),
-                                           hidden=Variable(hiddens.view(batch_size * beam_size, -1), volatile=True),
+            logits, hiddens = self.decoder(y=final_word_indices[:, :, -1].contiguous().view(batch_size * beam_size, ),
+                                           hidden=hiddens.view(batch_size * beam_size, -1),
                                            context=ctx,
                                            context_mask=ctx_mask,
                                            one_step=True,
@@ -305,4 +305,5 @@ class DL4MT(nn.Module):
             return self.force_teaching(src_seq, tgt_seq)
 
         elif mode == "infer":
+            torch.no_grad()
             return self.batch_beam_search(x=src_seq, **kwargs)

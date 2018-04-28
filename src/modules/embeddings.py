@@ -38,7 +38,7 @@ class Embeddings(nn.Module):
 
     def reset_parameters(self):
         if self.add_position_embedding:
-            nn.init.uniform(self.embeddings.weight.data, - 1.0 / self.scale, 1.0 / self.scale)
+            nn.init.uniform_(self.embeddings.weight.data, - 1.0 / self.scale, 1.0 / self.scale)
         else:
             my_init.embedding_init(self.embeddings.weight.data)
 
@@ -65,7 +65,7 @@ class Embeddings(nn.Module):
         # length x channels
         signal = torch.cat([scaled_time.sin(), scaled_time.cos()], 1)
 
-        return Variable(signal.unsqueeze(0).expand(batch, length, channels), requires_grad=False)
+        return signal.unsqueeze(0).expand(batch, length, channels)
 
     def forward(self, x):
 
