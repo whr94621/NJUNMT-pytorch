@@ -33,7 +33,7 @@ class Encoder(nn.Module):
         :param x: Input sequence.
             with shape [batch_size, seq_len, input_size]
         """
-        x_mask = x.data.eq(Vocab.PAD)
+        x_mask = x.detach().eq(Vocab.PAD)
 
         emb = self.embedding(x)
 
@@ -76,15 +76,15 @@ class Decoder(nn.Module):
 
     def _reset_parameters(self):
 
-        my_init.default_init(self.linear_input.weight.data)
-        my_init.default_init(self.linear_hidden.weight.data)
-        my_init.default_init(self.linear_ctx.weight.data)
+        my_init.default_init(self.linear_input.weight)
+        my_init.default_init(self.linear_hidden.weight)
+        my_init.default_init(self.linear_ctx.weight)
 
     def _build_bridge(self):
 
         if self.bridge_type == "mlp":
             self.linear_bridge = nn.Linear(in_features=self.context_size, out_features=self.hidden_size)
-            my_init.default_init(self.linear_bridge.weight.data)
+            my_init.default_init(self.linear_bridge.weight)
         elif self.bridge_type == "zero":
             pass
         else:
@@ -99,7 +99,7 @@ class Decoder(nn.Module):
             dec_init = F.tanh(self.linear_bridge(ctx_mean))
         elif self.bridge_type == "zero":
             batch_size = context.size(0)
-            dec_init = Variable(context.data.new(batch_size, self.hidden_size).zero_())
+            dec_init = context.new(batch_size, self.hidden_size).zero_()
         else:
             raise ValueError("Unknown bridge type {0}".format(self.bridge_type))
 
@@ -209,13 +209,13 @@ class DL4MT(nn.Module):
 
         ctx = tile_batch(ctx, multiplier=beam_size, batch_dim=0)
         dec_cache = tile_batch(dec_cache, multiplier=beam_size, batch_dim=0)
-        hiddens = tile_batch(dec_init, multiplier=beam_size, batch_dim=0).data
+        hiddens = tile_batch(dec_init, multiplier=beam_size, batch_dim=0)
         ctx_mask = tile_batch(ctx_mask, multiplier=beam_size, batch_dim=0)
 
         beam_mask = ctx_mask.new(batch_size, beam_size).fill_(1).float()
         dec_memory_len = ctx_mask.new(batch_size, beam_size).zero_().float()
         beam_scores = ctx_mask.new(batch_size, beam_size).zero_().float()
-        final_word_indices = x.data.new(batch_size, beam_size, 1).fill_(Vocab.BOS)
+        final_word_indices = x.new(batch_size, beam_size, 1).fill_(Vocab.BOS)
 
         for t in range(max_steps):
 
@@ -227,10 +227,10 @@ class DL4MT(nn.Module):
                                            cache=dec_cache
                                            )
 
-            hiddens = hiddens.view(batch_size, beam_size, -1).data
+            hiddens = hiddens.view(batch_size, beam_size, -1)
 
             next_scores = - self.generator(logits)  # [B * Bm, N]
-            next_scores = next_scores.view(batch_size, beam_size, -1).data
+            next_scores = next_scores.view(batch_size, beam_size, -1)
             next_scores = mask_scores(next_scores, beam_mask=beam_mask)
 
             beam_scores = next_scores + beam_scores.unsqueeze(2) # [B, Bm, N] + [B, Bm, 1] ==> [B, Bm, N]
@@ -305,5 +305,5 @@ class DL4MT(nn.Module):
             return self.force_teaching(src_seq, tgt_seq)
 
         elif mode == "infer":
-            torch.no_grad()
-            return self.batch_beam_search(x=src_seq, **kwargs)
+            with torch.no_grad():
+                return self.batch_beam_search(x=src_seq, **kwargs)

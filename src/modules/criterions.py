@@ -8,7 +8,7 @@ def filter_shard_state(state):
     for k, v in state.items():
         if v is not None:
             if isinstance(v, Variable) and v.requires_grad:
-                v = Variable(v.data, requires_grad=True, volatile=False)
+                v = Variable(v.detach(), requires_grad=True, volatile=False)
         yield k, v
 
 def shards(state, shard_size, eval=False, batch_dim=0):
@@ -52,7 +52,7 @@ def shards(state, shard_size, eval=False, batch_dim=0):
             yield dict(zip(keys, shard_tensors))
 
         # Assumed backprop'd
-        variables = ((state[k], v.grad.data) for k, v in non_none.items()
+        variables = ((state[k], v.grad.detach()) for k, v in non_none.items()
                      if isinstance(v, Variable) and v.grad is not None)
 
         inputs, grads = zip(*variables)
@@ -176,7 +176,7 @@ class NMTCritierion(Critierion):
 
         if self.confidence < 1:
 
-            tdata = gtruth.data
+            tdata = gtruth.detach()
 
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
             log_likelihood = torch.gather(scores, 1, tdata.unsqueeze(1))

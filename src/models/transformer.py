@@ -70,7 +70,7 @@ class Encoder(nn.Module):
 
         emb = self.embeddings(src_seq)
 
-        enc_mask = src_seq.data.eq(Vocab.PAD)
+        enc_mask = src_seq.detach().eq(Vocab.PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
 
         out = emb
@@ -165,7 +165,7 @@ class Decoder(nn.Module):
             query_len = 1
 
         # Decode mask
-        dec_slf_attn_pad_mask = tgt_seq.data.eq(Vocab.PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
+        dec_slf_attn_pad_mask = tgt_seq.detach().eq(Vocab.PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
         dec_slf_attn_sub_mask = get_attn_causal_mask(emb)
 
         dec_slf_attn_mask = torch.gt(dec_slf_attn_pad_mask + dec_slf_attn_sub_mask, 0)
@@ -277,10 +277,10 @@ class Transformer(nn.Module):
         enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0)
         enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0)
 
-        final_word_indices = src_seq.data.new(batch_size, beam_size, 1).fill_(Vocab.BOS) # Word indices in the beam
-        final_lengths = enc_output.data.new(batch_size, beam_size).fill_(0.0) # length of the sentence
-        beam_mask = enc_output.data.new(batch_size, beam_size).fill_(1.0) # Mask of beams
-        beam_scores = enc_output.data.new(batch_size, beam_size).fill_(0.0) # Accumulated scores of the beam
+        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(Vocab.BOS) # Word indices in the beam
+        final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0) # length of the sentence
+        beam_mask = enc_output.new(batch_size, beam_size).fill_(1.0) # Mask of beams
+        beam_scores = enc_output.new(batch_size, beam_size).fill_(0.0) # Accumulated scores of the beam
 
 
         self_attn_caches = None # Every element has shape [batch_size * beam_size, num_heads, seq_len, dim_head]
@@ -297,7 +297,7 @@ class Transformer(nn.Module):
                                enc_attn_caches=enc_attn_caches,
                                self_attn_caches=self_attn_caches) # [batch_size * beam_size, seq_len, dim]
 
-            next_scores = - self.generator(dec_output[:,-1].contiguous()).data # [batch_size * beam_size, n_words]
+            next_scores = - self.generator(dec_output[:,-1].contiguous()) # [batch_size * beam_size, n_words]
             next_scores = next_scores.view(batch_size, beam_size, -1)
             next_scores = mask_scores(next_scores, beam_mask=beam_mask)
 
@@ -335,7 +335,7 @@ class Transformer(nn.Module):
 
             self_attn_caches = nest.map_structure(
                 lambda t: tensor_gather_helper(gather_indices=next_beam_ids,
-                                               gather_from=t.data,
+                                               gather_from=t,
                                                batch_size=batch_size,
                                                beam_size=beam_size,
                                                gather_shape=[batch_size * beam_size, self.decoder.n_head,
