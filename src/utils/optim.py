@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import torch.optim
-from torch.nn.utils.clip_grad import clip_grad_norm
+from torch.nn.utils.clip_grad import clip_grad_norm_
 
 # Setup optimizer (should always come after model.cuda())
 # iterable of dicts for per-param options where each dict
@@ -105,7 +105,7 @@ class Optimizer(object):
     def step(self, closure=None):
         """Gradient clipping aware step()."""
         if self.gclip is not None and self.gclip > 0:
-            clip_grad_norm(self.params, self.gclip)
+            clip_grad_norm_(self.params, self.gclip)
         self.optim.step(closure)
 
     def rescale_lrate(self, scale, min_lrate=-1.0):

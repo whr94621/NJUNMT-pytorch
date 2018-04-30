@@ -4,7 +4,7 @@ import numpy as np
 from torch.autograd import Variable
 from src.utils.common_utils import Vocab
 from src.modules.basic import BottleLinear as Linear
-from src.modules.sublayers import LayerNorm, PositionwiseFeedForward, MultiHeadedAttention
+from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.modules.embeddings import Embeddings
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
 from src.utils import nest
@@ -28,7 +28,7 @@ class EncoderBlock(nn.Module):
     def __init__(self, d_model, d_inner_hid, n_head, dropout=0.1):
         super(EncoderBlock, self).__init__()
 
-        self.layer_norm = LayerNorm(features=d_model)
+        self.layer_norm = nn.LayerNorm(d_model)
 
         self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
 
@@ -62,7 +62,7 @@ class Encoder(nn.Module):
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
              for _ in range(n_layers)])
 
-        self.layer_norm = LayerNorm(d_model)
+        self.layer_norm = nn.LayerNorm(d_model)
 
     def forward(self, src_seq):
         # Word embedding look up
@@ -92,8 +92,9 @@ class DecoderBlock(nn.Module):
         self.ctx_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
         self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid)
 
-        self.layer_norm_1 = LayerNorm(d_model)
-        self.layer_norm_2 = LayerNorm(d_model)
+        self.layer_norm_1 = nn.LayerNorm(d_model)
+        self.layer_norm_2 = nn.LayerNorm(d_model)
+
         self.dropout = nn.Dropout(dropout)
 
     def compute_cache(self, enc_output):
@@ -142,7 +143,7 @@ class Decoder(nn.Module):
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
             for _ in range(n_layers)])
 
-        self.out_layer_norm = LayerNorm(d_model)
+        self.out_layer_norm = nn.LayerNorm(d_model)
 
     @property
     def dim_per_head(self):
@@ -255,8 +256,8 @@ class Transformer(nn.Module):
             assert tgt_seq is not None
             return self.force_teaching(src_seq, tgt_seq)
         elif mode == "infer":
-            torch.no_grad()
-            return self.batch_beam_search(src_seq=src_seq, **kwargs)
+            with torch.no_grad():
+                return self.batch_beam_search(src_seq=src_seq, **kwargs)
 
     def force_teaching(self, src_seq, tgt_seq):
 

@@ -3,18 +3,6 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-class LayerNorm(nn.Module):
-    def __init__(self, features, eps=1e-6):
-        super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
-
 class PositionwiseFeedForward(nn.Module):
     """ A two-layer Feed-Forward-Network with residual layer norm.
 
@@ -28,7 +16,7 @@ class PositionwiseFeedForward(nn.Module):
         super(PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(size, hidden_size)
         self.w_2 = nn.Linear(hidden_size, size)
-        self.layer_norm = LayerNorm(size)
+        self.layer_norm = nn.LayerNorm(size)
         # Save a little memory, by doing inplace.
         self.dropout_1 = nn.Dropout(dropout, inplace=False)
         self.relu = nn.ReLU(inplace=False)
