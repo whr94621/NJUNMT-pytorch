@@ -6,10 +6,11 @@ from src.utils import Vocab
 # Loss compute
 def filter_shard_state(state):
     for k, v in state.items():
-        if v is not None:
-            if isinstance(v, Variable) and v.requires_grad:
-                v = Variable(v.detach(), requires_grad=True, volatile=False)
-        yield k, v
+        if v is not None and isinstance(v, torch.Tensor) and v.requires_grad:
+            v_ = v.detach().requires_grad_()
+        else:
+            v_ = v
+        yield k, v_
 
 def shards(state, shard_size, eval=False, batch_dim=0):
     """
@@ -39,7 +40,7 @@ def shards(state, shard_size, eval=False, batch_dim=0):
         # want a sequence of dictionaries of tensors.
         # First, unzip the dictionary into a sequence of keys and a
         # sequence of tensor-like sequences.
-        keys, values = zip(*((k, map(lambda t: t.contiguous(), torch.split(v, split_size=shard_size, dim=batch_dim)))
+        keys, values = zip(*((k, map(lambda t: t.contiguous(), torch.split(v, split_size_or_sections=shard_size, dim=batch_dim)))
                              for k, v in non_none.items()))
 
         # Now, yield a dictionary for each shard. The keys are always
@@ -52,8 +53,8 @@ def shards(state, shard_size, eval=False, batch_dim=0):
             yield dict(zip(keys, shard_tensors))
 
         # Assumed backprop'd
-        variables = ((state[k], v.grad.detach()) for k, v in non_none.items()
-                     if isinstance(v, Variable) and v.grad is not None)
+        variables = ((state[k], v.grad) for k, v in non_none.items()
+                     if isinstance(v, torch.Tensor) and v.grad is not None)
 
         inputs, grads = zip(*variables)
         torch.autograd.backward(inputs, grads)
@@ -106,7 +107,7 @@ class Critierion(nn.Module):
         for shard in shards(state=kwargs, shard_size=shard_size, eval=eval, batch_dim=batch_dim):
 
             loss = self._compute_loss(generator=generator, **shard) # type: Variable
-            loss.div(normalization).backward()
+            loss.div(normalization).backward(retain_graph=True)
             loss_data += loss.detach().clone()
 
         return loss_data / normalization
