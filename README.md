@@ -66,7 +66,7 @@ For example, you can run wmt17 EN2DE task on a 8GB GTX1080 card
 
 with batch size 64 by setting ```shard_size=10```
 
-**WARNINIG**: ** ```shard``` is currently not supported in pytorch 0.4.0!**
+**WARNINIG**: ```shard``` **is currently not supported in pytorch 0.4.0!**
 
 
 2. What is ```use_bucket``` ?
