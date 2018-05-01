@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 from src.utils import Vocab
 import src.utils.init as my_init

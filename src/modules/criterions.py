@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from src.utils import Vocab
 
 # Loss compute
@@ -106,7 +105,7 @@ class Critierion(nn.Module):
 
         for shard in shards(state=kwargs, shard_size=shard_size, eval=eval, batch_dim=batch_dim):
 
-            loss = self._compute_loss(generator=generator, **shard) # type: Variable
+            loss = self._compute_loss(generator=generator, **shard)
             loss.div(normalization).backward(retain_graph=True)
             loss_data += loss.detach().clone()
 

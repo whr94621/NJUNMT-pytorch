@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 class PositionwiseFeedForward(nn.Module):
     """ A two-layer Feed-Forward-Network with residual layer norm.
@@ -150,7 +149,7 @@ class MultiHeadedAttention(nn.Module):
         if mask is not None:
 
             mask = mask.unsqueeze(1).expand_as(scores)
-            scores = scores.masked_fill(Variable(mask), -1e18)
+            scores = scores.masked_fill(mask, -1e18)
 
         # 3) Apply attention dropout and compute context vectors.
         attn = self.sm(scores)

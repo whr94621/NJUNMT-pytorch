@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from torch.autograd import Variable
 from src.utils.common_utils import Vocab
 from src.modules.basic import BottleLinear as Linear
 from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention

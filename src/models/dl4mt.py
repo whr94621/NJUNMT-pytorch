@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from src.utils.common_utils import Vocab
 import src.utils.init as my_init
@@ -94,9 +93,11 @@ class Decoder(nn.Module):
 
         # Generate init hidden
         if self.bridge_type == "mlp":
-            no_pad_mask = Variable((1.0 - mask.float()))
+
+            no_pad_mask = 1.0 - mask.float()
             ctx_mean = (context * no_pad_mask.unsqueeze(2)).sum(1) / no_pad_mask.unsqueeze(2).sum(1)
             dec_init = F.tanh(self.linear_bridge(ctx_mean))
+
         elif self.bridge_type == "zero":
             batch_size = context.size(0)
             dec_init = context.new(batch_size, self.hidden_size).zero_()
