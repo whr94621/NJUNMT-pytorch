@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+# from torch.autograd import Variable
 import src.utils.init as my_init
 from .basic import BottleSoftmax
 
@@ -26,7 +26,7 @@ class ScaledDotProductAttention(nn.Module):
                     'Attention mask shape {} mismatch ' \
                     'with Attention logit tensor shape ' \
                     '{}.'.format(attn_mask.size(), attn.size())
-            attn = attn.masked_fill(Variable(attn_mask), -1e18)
+            attn = attn.masked_fill(attn_mask, -1e18)
 
         attn = self.softmax(attn)
         attn = self.dropout(attn)
@@ -101,7 +101,7 @@ class BahdanauAttention(nn.Module):
 
         if mask is not None:
             mask_ = mask.unsqueeze(1) # [batch_size, 1, m_len]
-            logits = logits.masked_fill(Variable(mask_), -1e18)
+            logits = logits.masked_fill(mask_, -1e18)
 
         weights = self.softmax(logits) # [batch_size, q_len, m_len]
 

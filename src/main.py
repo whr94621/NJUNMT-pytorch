@@ -6,7 +6,6 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
 import torch
-from torch.autograd import Variable
 import numpy as np
 from src.utils.common_utils import *
 from src.utils.data_io import ZipDatasets, TextDataset, DataIterator
@@ -23,7 +22,7 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(GlobalNames.SEED)
 
 
-def prepare_data(seqs_x, seqs_y=None, eval=False, cuda=False, batch_first=True):
+def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
     """
     Args:
         eval ('bool'): indicator for eval/infer.
@@ -53,9 +52,6 @@ def prepare_data(seqs_x, seqs_y=None, eval=False, cuda=False, batch_first=True):
             x = x.cuda()
         return x
 
-    grad_mode = not eval  # True for training, False for eval/infer
-    torch.set_grad_enabled(grad_mode)  # enable grad for training, disable for eval/infer
-
     seqs_x = list(map(lambda s: [Vocab.BOS] + s + [Vocab.EOS], seqs_x))
     x = _np_pad_batch_2D(samples=seqs_x, pad=Vocab.PAD,
                          cuda=cuda, batch_first=batch_first)
@@ -81,32 +77,45 @@ def compute_forward(model,
                     n_correctness=False
                     ):
     """
-    :type model: Transformer
+    :type model: nn.Module
 
     :type critic: NMTCritierion
     """
 
+
+    if eval:
+        model.eval()
+        critic.eval()
+    else:
+        model.train()
+        critic.train()
+
     y_inp = seqs_y[:, :-1].contiguous()
     y_label = seqs_y[:, 1:].contiguous()
 
-    dec_outs = model(seqs_x, y_inp)
+    with torch.set_grad_enabled(not eval):
 
-    loss = critic(generator=model.generator,
-                  shard_size=shard_size,
-                  normalization=normalization,
-                  batch_dim=batch_dim,
-                  eval=eval,
-                  dec_outs=dec_outs,
-                  labels=y_label)
+        dec_outs = model(seqs_x, y_inp)
+
+        loss = critic(generator=model.generator,
+                      shard_size=shard_size,
+                      normalization=normalization,
+                      batch_dim=batch_dim,
+                      eval=eval,
+                      dec_outs=dec_outs,
+                      labels=y_label)
 
     if n_correctness:
-        mask = y_label.data.ne(Vocab.PAD)
-        pred = model.generator(dec_outs).data.max(2)[1]  # [batch_size, seq_len]
-        num_correct = y_label.data.eq(pred).float().masked_select(mask).sum() / normalization
+
+        with torch.no_grad():
+            
+            mask = y_label.ne(Vocab.PAD)
+            pred = model.generator(dec_outs).max(2)[1]  # [batch_size, seq_len]
+            num_correct = y_label.eq(pred).float().masked_select(mask).sum() / normalization
 
         return loss.item(), num_correct
 
-    return loss
+    return loss.item()
 
 
 def loss_validation(model, critic, valid_iterator):
@@ -124,8 +133,6 @@ def loss_validation(model, critic, valid_iterator):
     sum_loss = 0.0
     sum_correct = 0.0
 
-    model.eval()
-
     valid_iter = valid_iterator.build_generator()
 
     for batch in valid_iter:
@@ -134,7 +141,7 @@ def loss_validation(model, critic, valid_iterator):
         n_sents += len(seqs_x)
         n_tokens += sum(len(s) for s in seqs_y)
 
-        x, y = prepare_data(seqs_x, seqs_y, eval=True, cuda=GlobalNames.USE_GPU)
+        x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
         loss, num_correct = compute_forward(model=model,
                                             critic=critic,
@@ -195,7 +202,7 @@ def bleu_validation(uidx,
         seqs_x = batch[0]
         infer_progress_bar.update(len(seqs_x))
 
-        x = prepare_data(seqs_x, eval=True, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
 
         word_ids = model(x, mode="infer", beam_size=5)
 
@@ -502,12 +509,8 @@ def train(FLAGS):
             training_progress_bar.update(batch_size_t)
 
             # Prepare data
-            x, y = prepare_data(seqs_x, seqs_y,
-                                eval=False,
-                                cuda=GlobalNames.USE_GPU)
+            x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
-            #  Train for one batch
-            nmt_model.train()
             # optim.zero_grad()
             nmt_model.zero_grad()
             loss = compute_forward(model=nmt_model,

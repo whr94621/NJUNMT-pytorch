@@ -16,7 +16,7 @@ mechanism. Our implementation is different from the official [tensor2tenosr](htt
 # Requirements
 
 - python 3.5+
-- pytorch 3.1
+- pytorch 0.4.0
 - tqdm
 - tensorboardX
 
@@ -65,6 +65,9 @@ could make large model run in the memory-limited condition.
 For example, you can run wmt17 EN2DE task on a 8GB GTX1080 card
 
 with batch size 64 by setting ```shard_size=10```
+
+**WARNINIG**: ```shard``` **is currently not supported in pytorch 0.4.0!**
+
 
 2. What is ```use_bucket``` ?
 

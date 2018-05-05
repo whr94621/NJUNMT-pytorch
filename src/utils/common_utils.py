@@ -4,7 +4,7 @@ import contextlib
 import pickle as pkl
 import json
 import numpy as np
-from torch.autograd import Variable
+# from torch.autograd import Variable
 
 
 from . import nest
@@ -26,8 +26,7 @@ __all__ = [
     'Vocab',
     'sequence_mask',
     'build_vocab_shortlist',
-    'to_gpu',
-    'to_variable'
+    'to_gpu'
 ]
 
 # ================================================================================== #
@@ -319,67 +318,3 @@ def build_vocab_shortlist(shortlist):
 def to_gpu(*inputs):
 
     return list(map(lambda x: x.cuda(), inputs))
-
-def to_variable(*inputs, use_gpu=False, volatile=False):
-
-    if use_gpu:
-        outs = to_gpu(*inputs)
-    else:
-        outs = inputs
-    outs = list(map(lambda x: Variable(x.contiguous(), volatile=volatile), outs))
-
-    if len(outs) == 1:
-        return outs[0]
-    else:
-        return outs
-    # return list(map(lambda x: Variable(x.contiguous(), requires_grad=False, volatile=volatile), outs))
-
-# OPTIMIZERS = {
-#     "adam": torch.optim.Adam,
-#     "adadelta": torch.optim.Adadelta,
-#     "rmsprop": torch.optim.RMSprop,
-#     "sgd": torch.optim.SGD,
-# }
-#
-#
-# class Optimizer(object):
-#
-#     def __init__(self,
-#                  name,
-#                  params,
-#                  lrate,
-#                  grad_clip=None,
-#                  **kwargs):
-#
-#         if name not in OPTIMIZERS:
-#             raise ValueError("Unknown optimizer %s" % name)
-#
-#         self.optim = OPTIMIZERS[name](params=params, lr=lrate, **kwargs)
-#
-#         self.grad_clip = grad_clip
-#         self.lrate = lrate
-#
-#     def _grad_clipping(self):
-#
-#         if self.grad_clip is not None:
-#             for group in self.optim.param_groups:
-#                 torch.nn.utils.clip_grad_norm(parameters=group['params'], max_norm=self.grad_clip)
-#
-#     def step(self, closure=None):
-#
-#         # 1. clip gradients
-#         self._grad_clipping()
-#
-#         # 2. update
-#         self.optim.step(closure=closure)
-#
-#         # 3. zero gradients
-#         self.optim.zero_grad()
-#
-#     def set_lrate(self, lr):
-#
-#         for group in self.optim.param_groups:
-#             group['lr'] = lr
-#
-#     def zero_grad(self):
-#         self.optim.zero_grad()

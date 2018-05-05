@@ -1,15 +1,15 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from src.utils import Vocab
 
 # Loss compute
 def filter_shard_state(state):
     for k, v in state.items():
-        if v is not None:
-            if isinstance(v, Variable) and v.requires_grad:
-                v = Variable(v.data, requires_grad=True, volatile=False)
-        yield k, v
+        if v is not None and isinstance(v, torch.Tensor) and v.requires_grad:
+            v_ = v.detach().requires_grad_()
+        else:
+            v_ = v
+        yield k, v_
 
 def shards(state, shard_size, eval=False, batch_dim=0):
     """
@@ -39,7 +39,7 @@ def shards(state, shard_size, eval=False, batch_dim=0):
         # want a sequence of dictionaries of tensors.
         # First, unzip the dictionary into a sequence of keys and a
         # sequence of tensor-like sequences.
-        keys, values = zip(*((k, map(lambda t: t.contiguous(), torch.split(v, split_size=shard_size, dim=batch_dim)))
+        keys, values = zip(*((k, map(lambda t: t.contiguous(), torch.split(v, split_size_or_sections=shard_size, dim=batch_dim)))
                              for k, v in non_none.items()))
 
         # Now, yield a dictionary for each shard. The keys are always
@@ -52,8 +52,8 @@ def shards(state, shard_size, eval=False, batch_dim=0):
             yield dict(zip(keys, shard_tensors))
 
         # Assumed backprop'd
-        variables = ((state[k], v.grad.data) for k, v in non_none.items()
-                     if isinstance(v, Variable) and v.grad is not None)
+        variables = ((state[k], v.grad) for k, v in non_none.items()
+                     if isinstance(v, torch.Tensor) and v.grad is not None)
 
         inputs, grads = zip(*variables)
         torch.autograd.backward(inputs, grads)
@@ -105,8 +105,8 @@ class Critierion(nn.Module):
 
         for shard in shards(state=kwargs, shard_size=shard_size, eval=eval, batch_dim=batch_dim):
 
-            loss = self._compute_loss(generator=generator, **shard) # type: Variable
-            loss.div(normalization).backward()
+            loss = self._compute_loss(generator=generator, **shard)
+            loss.div(normalization).backward(retain_graph=True)
             loss_data += loss.detach().clone()
 
         return loss_data / normalization
@@ -175,22 +175,23 @@ class NMTCritierion(Critierion):
         gtruth = labels.view(-1)
 
         if self.confidence < 1:
+            # N: the number of samples
+            # M: the number of labels
+            tdata = gtruth.detach()
 
-            tdata = gtruth.data
-
-            mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
+            mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze() # mask of PAD
             log_likelihood = torch.gather(scores, 1, tdata.unsqueeze(1))
 
-            one_hot = self._smooth_label(num_tokens)
+            one_hot = self._smooth_label(num_tokens) # Do label smoothing
             if labels.is_cuda:
                 one_hot = one_hot.cuda()
-
-            tmp_ = one_hot.repeat(gtruth.size(0), 1)
+            tmp_ = one_hot.repeat(gtruth.size(0), 1) # [N, M]
             tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
-            if mask.dim() > 0:
+
+            if mask.numel() > 0:
                 log_likelihood.index_fill_(0, mask, 0)
                 tmp_.index_fill_(0, mask, 0)
-            gtruth = Variable(tmp_, requires_grad=False)
+            gtruth = tmp_.detach()
 
         loss = self.criterion(scores, gtruth)
 

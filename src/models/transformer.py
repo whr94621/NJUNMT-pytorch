@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from torch.autograd import Variable
 from src.utils.common_utils import Vocab
 from src.modules.basic import BottleLinear as Linear
-from src.modules.sublayers import LayerNorm, PositionwiseFeedForward, MultiHeadedAttention
+from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.modules.embeddings import Embeddings
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
 from src.utils import nest
@@ -28,7 +27,7 @@ class EncoderBlock(nn.Module):
     def __init__(self, d_model, d_inner_hid, n_head, dropout=0.1):
         super(EncoderBlock, self).__init__()
 
-        self.layer_norm = LayerNorm(features=d_model)
+        self.layer_norm = nn.LayerNorm(d_model)
 
         self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
 
@@ -62,7 +61,7 @@ class Encoder(nn.Module):
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
              for _ in range(n_layers)])
 
-        self.layer_norm = LayerNorm(d_model)
+        self.layer_norm = nn.LayerNorm(d_model)
 
     def forward(self, src_seq):
         # Word embedding look up
@@ -70,7 +69,7 @@ class Encoder(nn.Module):
 
         emb = self.embeddings(src_seq)
 
-        enc_mask = src_seq.data.eq(Vocab.PAD)
+        enc_mask = src_seq.detach().eq(Vocab.PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
 
         out = emb
@@ -92,8 +91,9 @@ class DecoderBlock(nn.Module):
         self.ctx_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
         self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid)
 
-        self.layer_norm_1 = LayerNorm(d_model)
-        self.layer_norm_2 = LayerNorm(d_model)
+        self.layer_norm_1 = nn.LayerNorm(d_model)
+        self.layer_norm_2 = nn.LayerNorm(d_model)
+
         self.dropout = nn.Dropout(dropout)
 
     def compute_cache(self, enc_output):
@@ -142,7 +142,7 @@ class Decoder(nn.Module):
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
             for _ in range(n_layers)])
 
-        self.out_layer_norm = LayerNorm(d_model)
+        self.out_layer_norm = nn.LayerNorm(d_model)
 
     @property
     def dim_per_head(self):
@@ -165,7 +165,7 @@ class Decoder(nn.Module):
             query_len = 1
 
         # Decode mask
-        dec_slf_attn_pad_mask = tgt_seq.data.eq(Vocab.PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
+        dec_slf_attn_pad_mask = tgt_seq.detach().eq(Vocab.PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
         dec_slf_attn_sub_mask = get_attn_causal_mask(emb)
 
         dec_slf_attn_mask = torch.gt(dec_slf_attn_pad_mask + dec_slf_attn_sub_mask, 0)
@@ -255,8 +255,8 @@ class Transformer(nn.Module):
             assert tgt_seq is not None
             return self.force_teaching(src_seq, tgt_seq)
         elif mode == "infer":
-            torch.no_grad()
-            return self.batch_beam_search(src_seq=src_seq, **kwargs)
+            with torch.no_grad():
+                return self.batch_beam_search(src_seq=src_seq, **kwargs)
 
     def force_teaching(self, src_seq, tgt_seq):
 
@@ -277,10 +277,10 @@ class Transformer(nn.Module):
         enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0)
         enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0)
 
-        final_word_indices = src_seq.data.new(batch_size, beam_size, 1).fill_(Vocab.BOS) # Word indices in the beam
-        final_lengths = enc_output.data.new(batch_size, beam_size).fill_(0.0) # length of the sentence
-        beam_mask = enc_output.data.new(batch_size, beam_size).fill_(1.0) # Mask of beams
-        beam_scores = enc_output.data.new(batch_size, beam_size).fill_(0.0) # Accumulated scores of the beam
+        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(Vocab.BOS) # Word indices in the beam
+        final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0) # length of the sentence
+        beam_mask = enc_output.new(batch_size, beam_size).fill_(1.0) # Mask of beams
+        beam_scores = enc_output.new(batch_size, beam_size).fill_(0.0) # Accumulated scores of the beam
 
 
         self_attn_caches = None # Every element has shape [batch_size * beam_size, num_heads, seq_len, dim_head]
@@ -297,7 +297,7 @@ class Transformer(nn.Module):
                                enc_attn_caches=enc_attn_caches,
                                self_attn_caches=self_attn_caches) # [batch_size * beam_size, seq_len, dim]
 
-            next_scores = - self.generator(dec_output[:,-1].contiguous()).data # [batch_size * beam_size, n_words]
+            next_scores = - self.generator(dec_output[:,-1].contiguous()) # [batch_size * beam_size, n_words]
             next_scores = next_scores.view(batch_size, beam_size, -1)
             next_scores = mask_scores(next_scores, beam_mask=beam_mask)
 
@@ -335,7 +335,7 @@ class Transformer(nn.Module):
 
             self_attn_caches = nest.map_structure(
                 lambda t: tensor_gather_helper(gather_indices=next_beam_ids,
-                                               gather_from=t.data,
+                                               gather_from=t,
                                                batch_size=batch_size,
                                                beam_size=beam_size,
                                                gather_shape=[batch_size * beam_size, self.decoder.n_head,

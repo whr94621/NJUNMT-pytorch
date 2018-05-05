@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-from torch.autograd import Variable
 
 from .common_utils import GlobalNames, Vocab
 
@@ -164,9 +163,6 @@ class Beam(object):
 
 
 def tile_batch(x, multiplier, batch_dim=0):
-    """
-    :type x: Variable
-    """
     x_size = x.size()
     out_size = x_size[:batch_dim] + (x_size[batch_dim] * multiplier,) + x_size[batch_dim+1:]
 
@@ -177,15 +173,6 @@ def tile_batch(x, multiplier, batch_dim=0):
     return x_tiled
 
 def mask_scores(scores, beam_mask):
-
-    """
-    :type scores: Variable
-    :param scores: [B, Bm, N]
-
-    :type beam_mask: Variable
-    :param beam_mask: [B, Bm]
-    """
-
     vocab_size = scores.size(-1)
 
     finished_row = beam_mask.new(vocab_size, ).zero_() + float(_FLOAT32_INF)

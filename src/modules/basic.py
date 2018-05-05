@@ -43,17 +43,3 @@ class BottleLinear(Bottle, Linear):
 class BottleSoftmax(Bottle, nn.Softmax):
     ''' Perform the reshape routine before and after a softmax operation'''
     pass
-
-class LayerNormalization(nn.Module):
-    ''' Layer normalization module '''
-
-    def __init__(self, d_hid, eps=1e-6):
-        super(LayerNormalization, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(d_hid))
-        self.b_2 = nn.Parameter(torch.zeros(d_hid))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2

@@ -21,10 +21,10 @@ class CGRUCell(nn.Module):
 
     def _reset_parameters(self):
         for weight in self.gru1.parameters():
-            my_init.rnn_init(weight.data)
+            my_init.rnn_init(weight)
 
         for weight in self.gru2.parameters():
-            my_init.rnn_init(weight.data)
+            my_init.rnn_init(weight)
 
 
     @property
