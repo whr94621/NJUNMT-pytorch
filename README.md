@@ -16,7 +16,7 @@ mechanism. Our implementation is different from the official [tensor2tenosr](htt
 # Requirements
 
 - python 3.5+
-- pytorch 3.1
+- pytorch 0.3.1
 - tqdm
 - tensorboardX
 
