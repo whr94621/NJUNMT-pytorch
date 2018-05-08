@@ -12,8 +12,3 @@
 7. use `scalar_tensor.item()` instead of `scalar_tensor.data[0]`
 8. `ONNX`-related functions (e.g., `torch.nn.utils.rnn .pack_padded_sequence()`) should not be called by explicit keyword args like `pack_padded_sequence(input=input_sorted, lengths=slens, batch_first=self.batch_first)`, which leads to failed arg check in `might_trace()` in `torch.onnx._symbolic_override_wrapper_maker`.
 
-## TODO
-
-- [ ] fix `shard`, which does not work yet
-- [ ] change remaining `Variable` and `Tensor.data` to pytorch 0.4.0 style
-- [ ] reconduct benchmarks 
