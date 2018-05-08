@@ -11,7 +11,7 @@ def _yield_flat_nest(nest):
             yield n
 
 def is_sequence(seq):
-    return isinstance(seq, list)
+    return isinstance(seq, (list, tuple))
 
 def flatten(nest):
 
@@ -31,7 +31,7 @@ def _packed_nest_with_indices(structure, flat, index):
         else:
             packed.append(flat[index])
             index += 1
-    return index, packed
+    return index, tuple(packed) if isinstance(structure, tuple) else packed
 
 def pack_sequence_as(structure, flat_sequence):
 
@@ -80,6 +80,9 @@ def map_structure(func, *structure):
 
     if not callable(func):
         raise TypeError("func must be callable!")
+
+    if len(structure) == 1 and not is_sequence(structure[0]):
+        return func(*structure)
 
     for other in structure[1:]:
         assert_same_structure(structure[0], other)
