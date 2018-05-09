@@ -134,6 +134,8 @@ class TextDataset(Dataset):
         for line in f_handles[0]:
             yield self.apply(line)
 
+        f_handles[0].close()
+
     def apply(self, line):
         """
         Process one line
@@ -200,6 +202,8 @@ class ZipDatasets(Dataset):
                 continue
 
             yield outs
+
+        [f.close() for f in f_handles]
 
     def data_iter(self):
 
