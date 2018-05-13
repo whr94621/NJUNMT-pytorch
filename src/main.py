@@ -727,7 +727,7 @@ def translate(FLAGS):
 
         batch_size_t = len(seqs_x)
 
-        x = prepare_data(seqs_x=seqs_x, eval=True, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x=seqs_x, cuda=GlobalNames.USE_GPU)
 
         word_ids = nmt_model(x, mode="infer", beam_size=5)
 
