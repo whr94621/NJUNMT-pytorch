@@ -4,7 +4,6 @@ from collections import defaultdict
 import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-
 import torch
 import numpy as np
 from src.utils.common_utils import *
@@ -434,6 +433,7 @@ def train(FLAGS):
         # pretrain
         load_pretrained_model(nmt_model, FLAGS.pretrain_path, exclude_prefix=None)
 
+
     if GlobalNames.USE_GPU:
         nmt_model = nmt_model.cuda()
         critic = critic.cuda()
@@ -500,7 +500,7 @@ def train(FLAGS):
                 new_lr = list(optim.get_lrate())[0]
                 summary_writer.add_scalar("lrate", new_lr, global_step=uidx)
 
-            seqs_x, seqs_y = batch
+            seqs_x, seqs_y = batch # [[batch_size, sample_length],[batch_size, sample_length]]
 
             batch_size_t = len(seqs_x)
             cum_samples += batch_size_t
@@ -508,7 +508,7 @@ def train(FLAGS):
 
             training_progress_bar.update(batch_size_t)
 
-            # Prepare data
+            # Prepare data x: [batch_size, max_length], y: [batch_size, max_length]
             x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
             # optim.zero_grad()

@@ -63,7 +63,7 @@ class MultiHeadedAttention(nn.Module):
 
     Args:
        head_count (int): number of parallel heads
-       model_dim (int): the dimension of keys/values/queries,
+       model_dim (int): the dimension of keys/values/queries, d_model
            must be divisible by head_count
        dropout (float): dropout parameter
     """
@@ -88,7 +88,7 @@ class MultiHeadedAttention(nn.Module):
     def _split_heads(self, x):
 
         batch_size = x.size(0)
-
+        # 【batch_size, head_count, sentence_length, head_dim]
         return x.view(batch_size, -1, self.head_count, self.dim_per_head) \
             .transpose(1, 2)
 
@@ -109,7 +109,7 @@ class MultiHeadedAttention(nn.Module):
                 key vectors `[batch, key_len, dim]`
            value (`FloatTensor`): set of `key_len`
                 value vectors `[batch, key_len, dim]`
-           query (`FloatTensor`): set of `query_len`
+           query (`FloatTensor`): set of `query_len{`
                  query vectors  `[batch, query_len, dim]`
            mask: binary mask indicating which keys have
                  non-zero attention `[batch, query_len, key_len]`
@@ -129,7 +129,7 @@ class MultiHeadedAttention(nn.Module):
             key_up, value_up = enc_attn_cache
         else:
             key_up = self._split_heads(self.linear_keys(key)) # [batch_size, num_head, seq_len, dim_head]
-            value_up = self._split_heads(self.linear_values(value))
+            value_up = self._split_heads(self.linear_values(value)) # [batch_size, num_head, seq_len, dim_head]
 
         if self_attn_cache is not None:
             key_up_prev, value_up_prev = self_attn_cache
@@ -137,7 +137,7 @@ class MultiHeadedAttention(nn.Module):
             key_up = torch.cat([key_up_prev, key_up], dim=2)
             value_up = torch.cat([value_up_prev, value_up], dim=2)
 
-        query_up = self._split_heads(self.linear_query(query))
+        query_up = self._split_heads(self.linear_query(query)) # [batch_size, num_head, seq_len, dim_head]
 
         key_len = key_up.size(2)
         query_len = query_up.size(2)
@@ -145,17 +145,21 @@ class MultiHeadedAttention(nn.Module):
         # 2) Calculate and scale scores.
         query_up = query_up / math.sqrt(dim_per_head)
         scores = torch.matmul(query_up, key_up.transpose(2, 3))
-
+        # [batch_size, num_head, seq_len, dim_head]， [batch_size, num_head, dim_head, seq_len]
+        # [batch_size, num_head, seq_len, seq_len]
         if mask is not None:
-
+            # [batch_size,1, seq_len, seq_len]
+            # [bathc_size, num_head, seq_len, seq_len]
             mask = mask.unsqueeze(1).expand_as(scores)
             scores = scores.masked_fill(mask, -1e18)
 
         # 3) Apply attention dropout and compute context vectors.
-        attn = self.sm(scores)
+        attn = self.sm(scores) # softmax
         drop_attn = self.dropout(attn)
         context = self._combine_heads(torch.matmul(drop_attn, value_up))
-
+        #[batch_size, num_head, src_len, seq_len] [batch_size, num_head, seq_len, dim_head] => [batch_size,num_head,src_len,dim_head]
+        #[2,3,4,5], [2,3,5,100] => [2,3,4,100]
+        #[batch_size,src_len,d_model]
         output = self.final_linear(context)
 
         # Return one attn

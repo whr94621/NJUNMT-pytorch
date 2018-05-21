@@ -83,6 +83,7 @@ class Dataset(object):
     def data_iter(self):
         return self._data_iter()
 
+# a generator for dataset
 class TextDataset(Dataset):
 
     def __init__(self,
@@ -160,8 +161,9 @@ class TextDataset(Dataset):
         else:
             return self._data_iter()
 
+# why need this class?
 class ZipDatasets(Dataset):
-
+    # dataset.
     def __init__(self, *datasets, shuffle=False):
         """
         """

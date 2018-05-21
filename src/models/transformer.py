@@ -31,7 +31,7 @@ class EncoderBlock(nn.Module):
 
         self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
 
-        self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid, dropout=dropout)
+        self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid, dropout=dropout)       # W_2 * relu(W_1*x + b_1) + b_2 + x
 
         self.dropout = nn.Dropout(dropout)
 
@@ -39,12 +39,19 @@ class EncoderBlock(nn.Module):
 
         input_norm = self.layer_norm(enc_input)
         context, _, _ = self.slf_attn(input_norm, input_norm, input_norm, slf_attn_mask)
-        out = self.dropout(context) + enc_input
+        out = self.dropout(context) + enc_input #
 
         return self.pos_ffn(out)
 
 class Encoder(nn.Module):
-
+    '''
+    n_src_vocab: vocabulary size;
+    n_layers: encoder layers;
+    n_head: number of multi-head attention's head;
+    d_word_vec: size of word embedding;
+    d_model:
+    d_inner_hid:
+    '''
     def __init__(
             self, n_src_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1):
@@ -52,6 +59,7 @@ class Encoder(nn.Module):
         super().__init__()
 
         self.num_layers = n_layers
+        # embeddings: [vocabulary_size, embedding_dim]
         self.embeddings = Embeddings(num_embeddings=n_src_vocab,
                                      embedding_dim=d_word_vec,
                                      dropout=dropout,
@@ -68,15 +76,16 @@ class Encoder(nn.Module):
         batch_size, src_len = src_seq.size()
 
         emb = self.embeddings(src_seq)
-
+        # if use directional mask
+        # enc_mask: [batch_size, src_len]
         enc_mask = src_seq.detach().eq(Vocab.PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
-
+        # enc_slf_attn_mask: [batch_size, src_len, src_len]
         out = emb
 
         for i in range(self.num_layers):
             out = self.block_stack[i](out, enc_slf_attn_mask)
-
+        # out: [batch_size, src_len, d_model]
         out = self.layer_norm(out)
 
         return out, enc_mask
@@ -181,10 +190,11 @@ class Decoder(nn.Module):
                                       enc_output,
                                       dec_slf_attn_mask,
                                       dec_enc_attn_mask,
-                                      enc_attn_cache=enc_attn_caches[i] if enc_attn_caches is not None else None,
+                                      enc_attn_cache=enc_attn_caches[i] if enc_attn_caches is not None else None, # None
                                       self_attn_cache=self_attn_caches[i] if self_attn_caches is not None else None)
+            # [key, value], key: [batch_size, num_head, pre_len, dim_head], value: [batch_size, num_head, pre_len, dim_head]
 
-            new_self_attn_caches += [self_attn_cache]
+            new_self_attn_caches += [self_attn_cache] # [[key_1,value_1], [key_2, value_2], ..., [key_num_layers, value_num_layers]]
             new_enc_attn_caches += [enc_attn_cache]
 
         output = self.out_layer_norm(output)
@@ -239,7 +249,7 @@ class Transformer(nn.Module):
         assert d_model == d_word_vec, \
         'To facilitate the residual connections, \
          the dimensions of all module output shall be the same.'
-
+        # tie the input embedding and out embedding?
         if proj_share_weight:
             self.generator = Generator(n_words=n_tgt_vocab,
                                        hidden_size=d_word_vec,
@@ -252,8 +262,9 @@ class Transformer(nn.Module):
     def forward(self, src_seq, tgt_seq=None, mode="train", **kwargs):
 
         if mode == "train":
-            assert tgt_seq is not None
+            assert tgt_seq is not None # [batch, length], [batch, length]
             return self.force_teaching(src_seq, tgt_seq)
+        # the algorithm is so complex to understand.
         elif mode == "infer":
             with torch.no_grad():
                 return self.batch_beam_search(src_seq=src_seq, **kwargs)
@@ -262,20 +273,21 @@ class Transformer(nn.Module):
 
         enc_output, enc_mask = self.encoder(src_seq)
         dec_output, _, _ = self.decoder(tgt_seq, enc_output, enc_mask)
-
+        # [batch_size, trg_len], [batch_size, src_len, d_model], [batch_size, src_len]
+        # probs = self.generator(dec_output.view(-1,dec_output.size(2)))
         return dec_output
+    # so complex and elegant algorithm.
 
     def batch_beam_search(self, src_seq, beam_size=5, max_steps=150):
 
         batch_size = src_seq.size(0)
-
-        enc_output, enc_mask = self.encoder(src_seq) # [batch_size, seq_len, dim]
+        enc_output, enc_mask = self.encoder(src_seq) # [batch_size, seq_len, dim], [batch_size,seq_len,seq_len]
 
         # dec_caches = self.decoder.compute_caches(enc_output)
 
         # Tile beam_size times
-        enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0)
-        enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0)
+        enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0) # [batch_size, beam_size, seq_len, seq_len]
+        enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0) # [batch_size, beam_size, seq_len, dim]
 
         final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(Vocab.BOS) # Word indices in the beam
         final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0) # length of the sentence
@@ -285,18 +297,19 @@ class Transformer(nn.Module):
 
         self_attn_caches = None # Every element has shape [batch_size * beam_size, num_heads, seq_len, dim_head]
         enc_attn_caches = None
+        # so hard, i think i need more time to understand it.
 
         for t in range(max_steps):
 
             inp_t = final_word_indices.view(-1, final_word_indices.size(-1))
-
+            #
             dec_output, self_attn_caches, enc_attn_caches \
                 = self.decoder(tgt_seq=inp_t,
                                enc_output=enc_output,
                                enc_mask=enc_mask,
                                enc_attn_caches=enc_attn_caches,
                                self_attn_caches=self_attn_caches) # [batch_size * beam_size, seq_len, dim]
-
+            #
             next_scores = - self.generator(dec_output[:,-1].contiguous()) # [batch_size * beam_size, n_words]
             next_scores = next_scores.view(batch_size, beam_size, -1)
             next_scores = mask_scores(next_scores, beam_mask=beam_mask)
@@ -345,7 +358,7 @@ class Transformer(nn.Module):
             # If next_word_ids is EOS, beam_mask_ should be 0.0
             beam_mask_ = 1.0 - next_word_ids.eq(Vocab.EOS).float()
             next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0), Vocab.PAD) # If last step a EOS is already generated, we replace the last token as PAD
-            beam_mask = beam_mask * beam_mask_
+            beam_mask = beam_mask * beam_mask_ # mask some sequences which the last word is eos.
 
             # # If an EOS or PAD is encountered, set the beam mask to 0.0
             # beam_mask_ = next_word_ids.gt(Vocab.EOS).float()

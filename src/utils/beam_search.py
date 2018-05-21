@@ -164,10 +164,10 @@ class Beam(object):
 
 def tile_batch(x, multiplier, batch_dim=0):
     x_size = x.size()
-    out_size = x_size[:batch_dim] + (x_size[batch_dim] * multiplier,) + x_size[batch_dim+1:]
-
-    x_tiled = torch.unsqueeze(x, dim=batch_dim + 1)
-    x_tiled = x_tiled.repeat(*[1 if d != batch_dim + 1 else multiplier for d in range(len(x_size) + 1)])
+    out_size = x_size[:batch_dim] + [x_size[batch_dim] * multiplier] + x_size[batch_dim+1:]
+    # [batch_size, batch_size*beam_size,seq_len, seq_len or dim]
+    x_tiled = torch.unsqueeze(x, dim=batch_dim + 1) # [batch_size,1,seq_len,seq_len/dim]
+    x_tiled = x_tiled.repeat(*[1 if d != batch_dim + 1 else multiplier for d in range(len(x_size) + 1)]) # [1,5,1,1]
     x_tiled = x_tiled.view(*out_size)
 
     return x_tiled
