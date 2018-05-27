@@ -35,8 +35,8 @@ model_configs:
 
 optimizer_configs:
   optimizer: "adam"
-  learning_rate: 2.0
-  grad_clip: 5.0
+  learning_rate: 1.0
+  grad_clip: - 1.0
   optimizer_params: ~
 
 training_configs:
@@ -56,7 +56,7 @@ training_configs:
   early_stop_patience: 20
   decay_method: "noam" # ["loss" | "noam"]
   decay_freq: 1 # Must be 1 when decay_method is 1
-  decay_warmup_steps: 3 # Make sense only decay_method is noam
+  decay_warmup_steps: 4000 # Make sense only decay_method is noam
   lrate_decay_patience: 30
   min_lrate: -1.0 # Make sense only decay_method is loss
 
