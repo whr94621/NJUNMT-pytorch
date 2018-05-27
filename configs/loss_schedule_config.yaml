@@ -36,7 +36,7 @@ model_configs:
 optimizer_configs:
   optimizer: "adam"
   learning_rate: 0.0005
-  grad_clip: 5.0
+  grad_clip: - 1.0
   optimizer_params: ~
 
 training_configs:
