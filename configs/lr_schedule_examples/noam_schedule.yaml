@@ -1,0 +1,5 @@
+schedule_method: noam
+scheduler_configs:
+  d_model: 512
+  warmup_steps: 4000
+  schedule_freq: 1

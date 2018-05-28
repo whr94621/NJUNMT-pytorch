@@ -438,20 +438,21 @@ def train(FLAGS):
         nmt_model = nmt_model.cuda()
         critic = critic.cuda()
 
-    if training_configs['decay_method'] == "loss":
+    # Configure Learning Scheduler
+    # Here we have two policies, "loss" and "noam"
 
-        scheduler = LossScheduler(optimizer=optim,
-                                  max_patience=training_configs['lrate_decay_patience'],
-                                  min_lr=training_configs['min_lrate'],
-                                  decay_scale=0.5,
-                                  warmup_steps=training_configs['decay_warmup_steps']
+    if optimizer_configs['schedule_method'] is not None:
+
+        if optimizer_configs['schedule_method'] == "loss":
+
+            scheduler = LossScheduler(optimizer=optim, **optimizer_configs['scheduler_configs']
                                   )
 
-    elif training_configs['decay_method'] == "noam":
-        optim.init_lr = optimizer_configs['learning_rate'] * model_configs['d_model'] ** (-0.5)
-
-        scheduler = NoamScheduler(optimizer=optim,
-                                  warmup_steps=training_configs['decay_warmup_steps'])
+        elif optimizer_configs['schedule_method'] == "noam":
+            scheduler = NoamScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
+        else:
+            WARN("Unknown scheduler name {0}. Do not use lr_scheduling.".format(optimizer_configs['schedule_method']))
+            scheduler = None
     else:
         scheduler = None
 
@@ -490,11 +491,12 @@ def train(FLAGS):
 
             # ================================================================================== #
             # Learning rate annealing
-            if np.mod(uidx, training_configs['decay_freq']) == 0 or FLAGS.debug:
+
+            if scheduler is not None and (np.mod(uidx, scheduler.schedule_freq) == 0 or FLAGS.debug):
 
                 if scheduler.step(global_step=uidx, loss=valid_loss):
 
-                    if training_configs['decay_method'] == "loss":
+                    if optimizer_configs['schedule_method'] == "loss":
                         nmt_model.load_state_dict(params_best_loss)
 
                 new_lr = list(optim.get_lrate())[0]

@@ -36,13 +36,14 @@ words and control it by config files while training.
 See examples in ```./configs``` folder. You can reproduce our
 Chinese-to-English Baseline by directly using those configures.
 
-```loss_schedule_config.yaml``` is the configure file using
-valid loss as schedule criterion.
+```dl4mt_config.yaml``` is the configure file for **DL4MT** model using
+loss scheduling as the default.
 
-```noam_schedule_config.yaml``` is the configure file using
-schedule method in google's paper.
+```transformer_base_config.yaml``` is the configure file for **Transformer**
+model using noam scheduling as the default 
 
-```dl4mt_config.yaml```
+For more details on how to configure learning rate scheduler, please see examples in 
+```./configs/lr_schedule_examples```
 
 ## Training
 See training script ```./scripts/train.sh```

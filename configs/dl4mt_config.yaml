@@ -1,5 +1,5 @@
 data_configs:
-  lang_pair: "en-zh"
+  lang_pair: "zh-en"
   train_data:
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/train/zh.under50.txt"
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/train/en.under50.txt"
@@ -34,6 +34,13 @@ optimizer_configs:
   learning_rate: 0.0005
   grad_clip: 5.0
   optimizer_params: ~
+  schedule_method: loss # ["loss" | "noam" | ~], see details in ./lr_schedule_examples
+  scheduler_configs:
+    warmup_steps: 8000
+    decay_scale: 0.5
+    min_lr: 0.00005
+    max_patience: 20
+    schedule_freq: 100
 
 training_configs:
   max_epochs: 1000000
@@ -50,8 +57,3 @@ training_configs:
   loss_valid_freq: &decay_freq 100
   bleu_valid_freq: 1000
   early_stop_patience: 20
-  decay_method: "loss" # ["loss" | "noam"]
-  decay_freq: *decay_freq
-  decay_warmup_steps: 8000
-  lrate_decay_patience: 30
-  min_lrate: 0.00005 # Make sense only decay_method is loss

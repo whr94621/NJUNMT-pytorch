@@ -35,9 +35,14 @@ model_configs:
 
 optimizer_configs:
   optimizer: "adam"
-  learning_rate: 0.0005
+  learning_rate: 1.0
   grad_clip: - 1.0
   optimizer_params: ~
+  schedule_method: noam # ["loss" | "noam" | ~], see details in ./lr_schedule_examples
+  scheduler_configs:
+    d_model: *dim
+    warmup_steps: 4000
+    schedule_freq: 1
 
 training_configs:
   max_epochs: 1000000
@@ -54,9 +59,3 @@ training_configs:
   loss_valid_freq: &decay_freq 100
   bleu_valid_freq: 1000
   early_stop_patience: 20
-  decay_method: "loss" # ["loss" | "noam"]
-  decay_freq: *decay_freq
-  decay_warmup_steps: 1
-  lrate_decay_patience: 30
-  min_lrate: 0.00005 # Make sense only decay_method is loss
-

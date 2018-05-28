@@ -1,0 +1,7 @@
+schedule_method: loss
+scheduler_configs:
+  warmup_steps: 8000 # after how many steps should we start to schedule learning rate
+  decay_scale: 0.5 # the factor multiplying to learning when scheduling
+  min_lr: 0.00005 # the minimum learning rate, -1 if not necessary
+  max_patience: 20 # the patience to schedule
+  schedule_freq: 100 # the frequency to schedule learning rate
