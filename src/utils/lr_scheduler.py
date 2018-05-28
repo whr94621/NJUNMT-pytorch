@@ -103,7 +103,11 @@ class NoamScheduler(LearningRateScheduler):
     """ Learning Rate Scheduling introduced by Noam Shazeer in Attention Is All You Need
 
     The learning rate is computed like:
-        lrate = d^{-0.5}_{model} * min(step_num^{-0.5}, step_num * warmup_steps^{-1.5})
+        lrate = origin_lrate * min(step_num^{-0.5}, step_num * warmup_steps^{-1.5})
+    where origin_lrate = optim.init_lr * d_model ** (-0.5).
+
+    When using noam scheduler, the initial learning rate should be 1.0 as default, and smaller if fining-tuned
+    is needed.
     """
     def __init__(self, optimizer, d_model, schedule_freq=1, warmup_steps=4000, min_lr=-1.0):
         """
@@ -118,14 +122,13 @@ class NoamScheduler(LearningRateScheduler):
 
         self.d_model = d_model
         self.warmup_steps = warmup_steps
-        self.optimizer.init_lr = self.d_model ** (-0.5)
 
     def should_scheduler(self, global_step, **kwargs):
         return True
 
     def get_new_lr(self, old_lr, global_step, **kwargs):
 
-        origin_lr = self.optimizer.init_lr
+        origin_lr = self.optimizer.init_lr * self.d_model ** (-0.5)
 
         new_lr = origin_lr * min(global_step ** (-0.5),
                                   global_step * self.warmup_steps ** (-1.5))
