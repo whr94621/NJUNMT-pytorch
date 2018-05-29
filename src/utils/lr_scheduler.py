@@ -1,11 +1,22 @@
 from .optim import  Optimizer
 
 class LearningRateScheduler(object):
+    """ The base class of learning rate scheduler
 
-    def __init__(self, optimizer, min_lr=-1.0):
-
+    When writing a new scheduler, two functions should be implemented.
+        - ```should_scheduler``` is used the return the condition to trigger the scheduler.
+        - ```get_new_lr``` is the function to compute the new learning rate.
+    """
+    def __init__(self, optimizer, schedule_freq, min_lr=-1.0):
+        """
+        Args:
+            optimizer: An instance of ```optim.Optimizer```
+            schedule_freq: The interval the scheduler should be triggered
+            min_lr: The minimum learning rate
+        """
         self.optimizer = optimizer # type:Optimizer
         self.min_lr = min_lr
+        self.schedule_freq = schedule_freq
 
     def should_scheduler(self, global_step, **kwargs):
         """Condition to schedule learning rate
@@ -35,10 +46,23 @@ class LearningRateScheduler(object):
 
 
 class LossScheduler(LearningRateScheduler):
+    """ Schedule learning rate according to loss on development set.
 
-    def __init__(self, optimizer, max_patience, min_lr=-1.0, decay_scale=0.5, warmup_steps=-1):
-
-        super().__init__(optimizer, min_lr)
+    This method is first introduced in ***Stronger Baselines for Trustable Results in Neural Machine Translation***,
+    M. Denkowski, et al.
+    """
+    def __init__(self, optimizer, schedule_freq, max_patience, min_lr=-1.0, decay_scale=0.5, warmup_steps=-1):
+        """
+        Args:
+            optimizer: An instance of ```optim.Optimizer```
+            schedule_freq: The interval the scheduler should be triggered
+            min_lr: The minimum learning rate
+            max_patience: Int. If learning rate does not decrease within these steps, the scheduler
+                          will be triggered.
+            decay_scale: Positive float. The factor multiplied to the learning rate.
+            warmup_steps: Int. The scheduler can not be triggered within these steps.
+        """
+        super().__init__(optimizer, schedule_freq, min_lr)
 
         self.max_patience = max_patience
         self.decay_scale = decay_scale
@@ -76,11 +100,27 @@ class LossScheduler(LearningRateScheduler):
         return new_lr
 
 class NoamScheduler(LearningRateScheduler):
+    """ Learning Rate Scheduling introduced by Noam Shazeer in Attention Is All You Need
 
-    def __init__(self, optimizer, warmup_steps=4000, min_lr=-1.0):
+    The learning rate is computed like:
+        lrate = origin_lrate * min(step_num^{-0.5}, step_num * warmup_steps^{-1.5})
+    where origin_lrate = optim.init_lr * d_model ** (-0.5).
 
-        super().__init__(optimizer, min_lr)
+    When using noam scheduler, the initial learning rate should be 1.0 as default, and smaller if fining-tuned
+    is needed.
+    """
+    def __init__(self, optimizer, d_model, schedule_freq=1, warmup_steps=4000, min_lr=-1.0):
+        """
+        Args:
+            optimizer: An instance of ```optim.Optimizer```
+            schedule_freq: The interval the scheduler should be triggered. Default is 1
+            min_lr: The minimum learning rate
+            d_model: Int. The dimension of the model.
+            warmup_steps: Int. The scheduler can not be triggered within these steps.
+        """
+        super().__init__(optimizer, schedule_freq, min_lr)
 
+        self.d_model = d_model
         self.warmup_steps = warmup_steps
 
     def should_scheduler(self, global_step, **kwargs):
@@ -88,7 +128,7 @@ class NoamScheduler(LearningRateScheduler):
 
     def get_new_lr(self, old_lr, global_step, **kwargs):
 
-        origin_lr = self.optimizer.init_lr
+        origin_lr = self.optimizer.init_lr * self.d_model ** (-0.5)
 
         new_lr = origin_lr * min(global_step ** (-0.5),
                                   global_step * self.warmup_steps ** (-1.5))
