@@ -1,6 +1,4 @@
 import os
-from collections import defaultdict
-
 import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -241,7 +239,8 @@ def bleu_validation(uidx,
         for line in trans:
             f.write('%s\n' % line)
 
-    bleu_v = bleu_scorer.corpus_bleu(hyp_path)
+    with open(hyp_path) as f:
+        bleu_v = bleu_scorer.corpus_bleu(f)
 
     return bleu_v
 
@@ -332,12 +331,14 @@ def train(FLAGS):
         TextDataset(data_path=data_configs['train_data'][0],
                     vocab=vocab_src,
                     bpe_codes=data_configs['bpe_codes'][0],
-                    max_len=data_configs['max_len'][0]
+                    max_len=data_configs['max_len'][0],
+                    use_char=data_configs['use_char'][0]
                     ),
         TextDataset(data_path=data_configs['train_data'][1],
                     vocab=vocab_tgt,
                     bpe_codes=data_configs['bpe_codes'][1],
-                    max_len=data_configs['max_len'][1]
+                    max_len=data_configs['max_len'][1],
+                    use_char=data_configs['use_char'][1]
                     ),
         shuffle=training_configs['shuffle']
     )
@@ -345,10 +346,14 @@ def train(FLAGS):
     valid_bitext_dataset = ZipDatasets(
         TextDataset(data_path=data_configs['valid_data'][0],
                     vocab=vocab_src,
-                    bpe_codes=data_configs['bpe_codes'][0]),
+                    bpe_codes=data_configs['bpe_codes'][0],
+                    use_char=data_configs['use_char'][0]
+                    ),
         TextDataset(data_path=data_configs['valid_data'][1],
                     vocab=vocab_tgt,
-                    bpe_codes=data_configs['bpe_codes'][1])
+                    bpe_codes=data_configs['bpe_codes'][1],
+                    use_char=data_configs['use_char'][1]
+                    )
     )
 
     training_iterator = DataIterator(dataset=train_bitext_dataset,
@@ -362,7 +367,12 @@ def train(FLAGS):
                                   sort_buffer=False)
 
     bleu_scorer = ExternalScriptBLEUScorer(reference_path=data_configs['bleu_valid_reference'],
-                                           lang_pair=data_configs['lang_pair'])
+                                           lang=data_configs['lang_pair'].split('-')[1],
+                                           bleu_script=training_configs['bleu_valid_configs']['bleu_script'],
+                                           digits_only=True,
+                                           lc=training_configs['bleu_valid_configs']['lowercase'],
+                                           postprocess=training_configs['bleu_valid_configs']['postprocess']
+                                           )
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -674,7 +684,7 @@ def translate(FLAGS):
 
     valid_dataset = TextDataset(data_path=FLAGS.source_path,
                                 vocab=vocab_src,
-                                bpe_codes=FLAGS.source_bpe_codes)
+                                bpe_codes=data_configs['bpe_codes'][0])
 
     valid_iterator = DataIterator(dataset=valid_dataset,
                                   batch_size=FLAGS.batch_size,
