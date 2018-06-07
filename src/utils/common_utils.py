@@ -8,9 +8,6 @@ import numpy as np
 
 
 from . import nest
-from src.metric.bleu_score import corpus_bleu
-
-
 
 __all__ = [
     'batch_open',
@@ -21,8 +18,6 @@ __all__ = [
     'Timer',
     'WARN',
     'Collections',
-    'LearningRateDecay',
-    'BLEUScorer',
     'Vocab',
     'sequence_mask',
     'build_vocab_shortlist',
@@ -175,61 +170,6 @@ class Collections(object):
             archives_ = pkl.load(f)
 
         return archives_
-
-class LearningRateDecay(object):
-
-    def __init__(self, max_patience, min_lrate=5e-5, start_steps=0):
-        self._max_patience = max_patience
-        self._min_lrate = min_lrate
-        self._start_steps = start_steps
-
-        self._min_loss = 1000000.0
-        self._bad_counts = 0
-
-    def decay(self, n_steps, loss, lrate):
-
-        if n_steps < self._start_steps:
-            return lrate
-
-        if loss < self._min_loss:
-            self._min_loss = loss
-            self._bad_counts = 0
-        else:
-            self._bad_counts += 1
-
-            if self._bad_counts >= self._max_patience and lrate > self._min_lrate:
-                self._bad_counts = 0
-                lrate = lrate / 2.0
-
-            lrate = max(lrate, self._min_lrate) # No less than the minimum learning rate
-
-        return lrate
-
-class BLEUScorer(object):
-
-    def __init__(self, reference_path, use_char=False):
-
-        if not isinstance(reference_path, list):
-            raise ValueError("reference_path must be a list")
-
-        self._reference_path = reference_path
-
-        _references = []
-        with batch_open(self._reference_path) as fs:
-            for lines in zip(*fs):
-                if use_char is False:
-                    _references.append([line.strip().split() for line in lines])
-
-                else:
-                    _references.append([list(line.strip().replace(" ", "")) for line in lines])
-
-        self._references = _references
-
-    def corpus_bleu(self, hypotheses):
-
-        return corpus_bleu(list_of_references=self._references,
-                           hypotheses=hypotheses,
-                           emulate_multibleu=True)
 
 class Vocab(object):
 

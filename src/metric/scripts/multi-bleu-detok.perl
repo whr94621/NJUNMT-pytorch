@@ -5,7 +5,9 @@
 
 # This file uses the internal tokenization of mteval-v13a.pl,
 # giving the exact same (case-sensitive) results on untokenized text.
-# 
+# Using this script with detokenized output and untokenized references is
+# preferrable over multi-bleu.perl, since scores aren't affected by tokenization differences.
+#
 # like multi-bleu.perl , it supports plain text input and multiple references.
 
 # $Id$

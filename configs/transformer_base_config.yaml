@@ -13,6 +13,9 @@ data_configs:
   bpe_codes:
     - ""
     - ""
+  use_char:
+    - false
+    - false
   n_words:
     - 30000
     - 30000
@@ -54,6 +57,10 @@ training_configs:
   valid_batch_size: 50
   bleu_valid_batch_size: 10
   bleu_valid_warmup: 10000 # Start to do BLEU validation after those steps
+  bleu_valid_configs:
+    bleu_script: "multi-bleu"
+    lowercase: true
+    postprocess: false
   disp_freq: 100 # Frequency to print information
   save_freq: 1000 # Frequency to save the model
   loss_valid_freq: &decay_freq 100
