@@ -3,6 +3,13 @@
 # This file is part of moses.  Its use is licensed under the GNU Lesser General
 # Public License version 2.1 or, at your option, any later version.
 
+# This file uses the internal tokenization of mteval-v13a.pl,
+# giving the exact same (case-sensitive) results on untokenized text.
+# Using this script with detokenized output and untokenized references is
+# preferrable over multi-bleu.perl, since scores aren't affected by tokenization differences.
+# 
+# like multi-bleu.perl , it supports plain text input and multiple references.
+
 # $Id$
 use warnings;
 use strict;
@@ -15,7 +22,7 @@ if ($ARGV[0] eq "-lc") {
 
 my $stem = $ARGV[0];
 if (!defined $stem) {
-  print STDERR "usage: multi-bleu.pl [-lc] reference < hypothesis\n";
+  print STDERR "usage: multi-bleu-detok.pl [-lc] reference < hypothesis\n";
   print STDERR "Reads the references from reference or reference0, reference1, ...\n";
   exit(1);
 }
@@ -44,11 +51,12 @@ sub add_to_ref {
     my $s=0;
     if ($file =~ /.gz$/) {
 	open(REF,"gzip -dc $file|") or die "Can't read $file";
-    } else {
+    } else { 
 	open(REF,$file) or die "Can't read $file";
     }
     while(<REF>) {
 	chop;
+	$_ = tokenization($_);
 	push @{$$REF[$s++]}, $_;
     }
     close(REF);
@@ -59,6 +67,7 @@ my $s=0;
 while(<STDIN>) {
     chop;
     $_ = lc if $lowercase;
+    $_ = tokenization($_);
     my @WORD = split;
     my %REF_NGRAM = ();
     my $length_translation_this_sentence = scalar(@WORD);
@@ -171,4 +180,32 @@ printf "BLEU = %.2f, %.1f/%.1f/%.1f/%.1f (BP=%.3f, ratio=%.3f, hyp_len=%d, ref_l
 sub my_log {
   return -9999999999 unless $_[0];
   return log($_[0]);
+}
+
+
+
+sub tokenization
+{
+	my ($norm_text) = @_;
+
+# language-independent part:
+	$norm_text =~ s/<skipped>//g; # strip "skipped" tags
+	$norm_text =~ s/-\n//g; # strip end-of-line hyphenation and join lines
+	$norm_text =~ s/\n/ /g; # join lines
+	$norm_text =~ s/&quot;/"/g;  # convert SGML tag for quote to "
+	$norm_text =~ s/&amp;/&/g;   # convert SGML tag for ampersand to &
+	$norm_text =~ s/&lt;/</g;    # convert SGML tag for less-than to >
+	$norm_text =~ s/&gt;/>/g;    # convert SGML tag for greater-than to <
+
+# language-dependent part (assuming Western languages):
+	$norm_text = " $norm_text ";
+	$norm_text =~ s/([\{-\~\[-\` -\&\(-\+\:-\@\/])/ $1 /g;   # tokenize punctuation
+	$norm_text =~ s/([^0-9])([\.,])/$1 $2 /g; # tokenize period and comma unless preceded by a digit
+	$norm_text =~ s/([\.,])([^0-9])/ $1 $2/g; # tokenize period and comma unless followed by a digit
+	$norm_text =~ s/([0-9])(-)/$1 $2 /g; # tokenize dash when preceded by a digit
+	$norm_text =~ s/\s+/ /g; # one space only between words
+	$norm_text =~ s/^\s+//;  # no leading space
+	$norm_text =~ s/\s+$//;  # no trailing space
+
+	return $norm_text;
 }
