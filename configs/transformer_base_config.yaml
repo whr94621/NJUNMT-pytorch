@@ -39,7 +39,7 @@ model_configs:
 optimizer_configs:
   optimizer: "adam"
   learning_rate: 1.0
-  grad_clip: - 1.0
+  grad_clip: -1.0
   optimizer_params: ~
   schedule_method: noam # ["loss" | "noam" | ~], see details in ./lr_schedule_examples
   scheduler_configs:
