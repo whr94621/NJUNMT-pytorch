@@ -1,3 +1,4 @@
+import time
 import os
 import yaml
 from tensorboardX import SummaryWriter
@@ -6,6 +7,7 @@ from tqdm import tqdm
 import torch
 import numpy as np
 from src.utils.common_utils import *
+from src.utils.logging import *
 from src.utils.data_io import ZipDatasets, TextDataset, DataIterator
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
 import src.models
@@ -291,6 +293,9 @@ def train(FLAGS):
         model_name: str
         log_path: str
     """
+
+    # write log of training to file.
+    write_log_to_file(os.path.join(FLAGS.log_path, "%s.log" % time.strftime("%Y%m%d-%H%M%S")))
 
     GlobalNames.USE_GPU = FLAGS.use_gpu
 
