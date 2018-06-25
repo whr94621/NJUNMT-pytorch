@@ -4,19 +4,13 @@ import contextlib
 import pickle as pkl
 import json
 import numpy as np
-# from torch.autograd import Variable
-
 
 from . import nest
 
 __all__ = [
     'batch_open',
-    'ERROR',
     'GlobalNames',
-    'INFO',
-    'PRINT',
     'Timer',
-    'WARN',
     'Collections',
     'Vocab',
     'sequence_mask',
@@ -82,21 +76,6 @@ class Timer(object):
             return '%d:%02d' % (m, s)
         h, m = divmod(m, 60)
         return '%d:%02d:%02d' % (h, m, s)
-
-def ERROR(string):
-    sys.stderr.write('{0} ERROR: {1}\n'.format(time.strftime(time_format), string))
-
-def INFO(string):
-    time_format = '%Y-%m-%d %H:%M:%S'
-    print('{0}: {1}'.format(time.strftime(time_format), string))
-
-def PRINT(*string):
-    ss = [s if isinstance(s, str) else '{0}'.format(s) for s in string]
-    sys.stderr.write('{0}\n'.format(' '.join(ss)))
-
-
-def WARN(string):
-    sys.stderr.write('{0} WARNING: {1}\n'.format(time.strftime(time_format), string))
 
 class Collections(object):
 

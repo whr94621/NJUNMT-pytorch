@@ -5,7 +5,8 @@ import tempfile
 import os
 
 from .bpe import Bpe
-from .common_utils import Vocab, batch_open, INFO, GlobalNames
+from .common_utils import Vocab, batch_open, GlobalNames
+from .logging import INFO
 
 __all__ = [
     'TextDataset',
