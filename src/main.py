@@ -544,9 +544,9 @@ def train(FLAGS):
             if np.mod(uidx, training_configs['disp_freq']) == 0:
                 # words per second and sents per second
                 words_per_sec = cum_words / (timer.toc(return_seconds=True))
-                words_per_sen = cum_samples / (timer.toc(return_seconds=True))
-                summary_writer.add_scalar("Speed (words/sec)", scalar_value=words_per_sec, global_step=uidx)
-                summary_writer.add_scalar("Speed (words/sen)", scalar_value=words_per_sen, global_step=uidx)
+                sents_per_sec = cum_samples / (timer.toc(return_seconds=True))
+                summary_writer.add_scalar("Speed(words/sec)", scalar_value=words_per_sec, global_step=uidx)
+                summary_writer.add_scalar("Speed(sents/sen)", scalar_value=sents_per_sec, global_step=uidx)
 
                 # Reset timer
                 timer.tic()
