@@ -8,7 +8,7 @@ export MODEL_NAME="transformer-zh2en-word30K"
 
 python3 ./translate.py \
     --model_name $MODEL_NAME \
-    --source_path "/home/weihr/NMT_DATA_PY3/1.34M/test/MT0$1/src.txt" \
+    --source_path "/home/weihr/NMT_DATA_PY3/1.34M/unittest/MT0$1/src.txt" \
     --model_path "./save/$MODEL_NAME.best.tpz" \
     --config_path "./configs.yaml" \
     --batch_size 20 \

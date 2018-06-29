@@ -164,7 +164,10 @@ def bleu_validation(uidx,
                     bleu_scorer,
                     vocab_tgt,
                     batch_size,
-                    eval_at_char_level=False):
+                    eval_at_char_level=False,
+                    valid_dir="./valid",
+                    max_steps=10
+                    ):
     """
     :type model: Transformer
 
@@ -204,7 +207,7 @@ def bleu_validation(uidx,
 
         x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
 
-        word_ids = model(x, mode="infer", beam_size=5)
+        word_ids = model(x, mode="infer", beam_size=5, max_steps=max_steps)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
@@ -232,10 +235,10 @@ def bleu_validation(uidx,
     if eval_at_char_level is True:
         trans = [' '.join(_split_into_chars(line.strip().split())) for line in trans]
 
-    if not os.path.exists("./valid"):
-        os.mkdir("./valid")
-
-    hyp_path = './valid/trans.iter{0}.txt'.format(uidx)
+    if not os.path.exists(valid_dir):
+        os.mkdir(valid_dir)
+    
+    hyp_path = os.path.join(valid_dir, 'trans.iter{0}.txt'.format(uidx))
 
     with open(hyp_path, 'w') as f:
         for line in trans:
@@ -619,7 +622,9 @@ def train(FLAGS):
                                              model=nmt_model,
                                              bleu_scorer=bleu_scorer,
                                              eval_at_char_level=data_configs['eval_at_char_level'],
-                                             vocab_tgt=vocab_tgt
+                                             vocab_tgt=vocab_tgt,
+                                             valid_dir=FLAGS.valid_path,
+                                             max_steps=training_configs["bleu_valid_max_steps"]
                                              )
 
                 model_collections.add_to_collection(key="history_bleus", value=valid_bleu)
