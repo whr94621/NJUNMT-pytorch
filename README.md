@@ -1,6 +1,6 @@
 # NJUNMT-pytorch
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Build Status](https://travis-ci.com/whr94621/NJUNMT-pytorch.svg?branch=dev-travis-ci)](https://travis-ci.com/whr94621/NJUNMT-pytorch)
 
 NJUNMT-pytorch is an open-source toolkit for neural machine translation.
 This toolkit is highly research-oriented, which contains some common baseline
