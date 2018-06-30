@@ -1,4 +1,3 @@
-import argparse
 from src.bin import translate
 
 if __name__ == '__main__':
