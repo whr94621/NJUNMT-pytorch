@@ -9,9 +9,6 @@ parser.add_argument("--model_name", type=str,
 parser.add_argument("--source_path", type=str,
                     help="""Path to source file.""")
 
-parser.add_argument("--source_bpe_codes", type=str,
-                    help="""Path to source bpe codes""")
-
 parser.add_argument("--model_path", type=str,
                     help="""Path to model files.""")
 
@@ -32,8 +29,15 @@ parser.add_argument("--keep_n", type=int, default=-1,
 
 parser.add_argument("--use_gpu", action="store_true")
 
-def run():
+parser.add_argument("--max_steps", type=int, default=150,
+                    help="""Max steps of decoding. Default is 150.""")
+
+def run(**kwargs):
 
     args = parser.parse_args()
+
+    # Modify some options.
+    for k, v in kwargs.items():
+        setattr(args, k, v)
 
     translate(args)

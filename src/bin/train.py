@@ -30,26 +30,17 @@ parser.add_argument('--pretrain_path', type=str, default="", help="The path for 
 parser.add_argument("--valid_path", type=str, default="./valid",
                     help="""Path to save translation for bleu evaulation. Default is ./valid.""")
 
-def run():
+def run(**kwargs):
 
     args = parser.parse_args()
 
-    auto_mkdir(args.log_path)
-
-    auto_mkdir(args.saveto)
-
-    train(args)
-
-def test(**kwargs):
-
-    args = parser.parse_args()
-
+    # Modify some options.
     for k, v in kwargs.items():
         setattr(args, k, v)
 
     auto_mkdir(args.log_path)
-
     auto_mkdir(args.saveto)
+    auto_mkdir(args.valid_path)
 
     train(args)
 
