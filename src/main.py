@@ -12,7 +12,7 @@ from src.utils.data_io import ZipDatasets, TextDataset, DataIterator
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
 import src.models
 from src.models import *
-from src.modules.criterions import NMTCritierion
+from src.modules.criterions import NMTCriterion
 from src.utils.optim import Optimizer
 from src.utils.lr_scheduler import LossScheduler, NoamScheduler
 
@@ -79,7 +79,7 @@ def compute_forward(model,
     """
     :type model: nn.Module
 
-    :type critic: NMTCritierion
+    :type critic: NMTCriterion
     """
 
 
@@ -122,7 +122,7 @@ def loss_validation(model, critic, valid_iterator):
     """
     :type model: Transformer
 
-    :type critic: NMTCritierion
+    :type critic: NMTCriterion
 
     :type valid_iterator: DataIterator
     """
@@ -404,7 +404,7 @@ def train(FLAGS):
                                 n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
 
-    critic = NMTCritierion(label_smoothing=model_configs['label_smoothing'])
+    critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
 
     INFO(critic)
     INFO('Done. Elapsed time {0}'.format(timer.toc()))

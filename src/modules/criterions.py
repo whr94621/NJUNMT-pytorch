@@ -59,7 +59,7 @@ def shards(state, shard_size, eval=False, batch_dim=0):
         torch.autograd.backward(inputs, grads)
 
 
-class Critierion(nn.Module):
+class Criterion(nn.Module):
     """
     Class for managing efficient loss computation. Handles
     sharding next step predictions and accumulating mutiple
@@ -80,7 +80,7 @@ class Critierion(nn.Module):
     """
 
     def __init__(self):
-        super(Critierion, self).__init__()
+        super(Criterion, self).__init__()
 
     def _compute_loss(self, generator, *args, **kwargs):
         """
@@ -128,7 +128,7 @@ class Critierion(nn.Module):
                                             eval=eval,
                                             batch_dim=batch_dim,
                                             **kwargs)
-class NMTCritierion(Critierion):
+class NMTCriterion(Criterion):
     """
     TODO:
     1. Add label smoothing
