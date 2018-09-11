@@ -6,53 +6,20 @@ from tqdm import tqdm
 
 import torch
 import numpy as np
-from src.data.vocabulary import Vocabulary
-from src.data.dataset import TextLineDataset, ZipDataset
-from src.data.data_iterator import DataIterator
 from src.utils.common_utils import *
 from src.utils.logging import *
+from src.utils.data_io import ZipDatasets, TextDataset, DataIterator
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
-from src.models import build_model
+import src.models
+from src.models import *
 from src.modules.criterions import NMTCriterion
 from src.utils.optim import Optimizer
-from src.utils.lr_scheduler import LossScheduler, NoamScheduler, RsqrtScheduler
+from src.utils.lr_scheduler import LossScheduler, NoamScheduler
 
 # Fix random seed
 torch.manual_seed(GlobalNames.SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(GlobalNames.SEED)
-
-BOS = Vocabulary.BOS
-EOS = Vocabulary.EOS
-PAD = Vocabulary.PAD
-
-def split_shard(*inputs, split_size=1):
-    if split_size <= 1:
-        yield inputs
-    else:
-
-        lengths = [len(s) for s in inputs[-1]]  #
-        sorted_indices = np.argsort(lengths)
-
-        # sorting inputs
-
-        inputs = [
-            [inp[ii] for ii in sorted_indices]
-            for inp in inputs
-        ]
-
-        # split shards
-        total_batch = sorted_indices.shape[0]  # total number of batches
-
-        if split_size >= total_batch:
-            yield inputs
-        else:
-            shard_size = total_batch // split_size
-
-            _indices = list(range(total_batch))[::shard_size] + [total_batch]
-
-            for beg, end in zip(_indices[:-1], _indices[1:]):
-                yield (inp[beg:end] for inp in inputs)
 
 
 def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
@@ -85,15 +52,15 @@ def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
             x = x.cuda()
         return x
 
-    seqs_x = list(map(lambda s: [BOS] + s + [EOS], seqs_x))
-    x = _np_pad_batch_2D(samples=seqs_x, pad=PAD,
+    seqs_x = list(map(lambda s: [Vocab.BOS] + s + [Vocab.EOS], seqs_x))
+    x = _np_pad_batch_2D(samples=seqs_x, pad=Vocab.PAD,
                          cuda=cuda, batch_first=batch_first)
 
     if seqs_y is None:
         return x
 
-    seqs_y = list(map(lambda s: [BOS] + s + [EOS], seqs_y))
-    y = _np_pad_batch_2D(seqs_y, pad=PAD,
+    seqs_y = list(map(lambda s: [Vocab.BOS] + s + [Vocab.EOS], seqs_y))
+    y = _np_pad_batch_2D(seqs_y, pad=Vocab.PAD,
                          cuda=cuda, batch_first=batch_first)
 
     return x, y
@@ -115,7 +82,7 @@ def compute_forward(model,
     y_inp = seqs_y[:, :-1].contiguous()
     y_label = seqs_y[:, 1:].contiguous()
 
-    words_norm = y_label.ne(PAD).float().sum(1)
+    words_norm = y_label.ne(Vocab.PAD).float().sum(1)
 
     if not eval:
         model.train()
@@ -185,9 +152,31 @@ def bleu_validation(uidx,
                     bleu_scorer,
                     vocab_tgt,
                     batch_size,
+                    eval_at_char_level=False,
                     valid_dir="./valid",
                     max_steps=10
                     ):
+    """
+    :type model: Transformer
+
+    :type valid_iterator: DataIterator
+
+    :type bleu_scorer: ExternalScriptBLEUScorer
+
+    :type vocab_tgt: Vocab
+    """
+
+    def _split_into_chars(line):
+        new_line = []
+        for w in line:
+            if vocab_tgt.token2id(w) not in {Vocab.UNK, Vocab.EOS, Vocab.BOS, Vocab.PAD}:
+                # if not UNK, split into characters
+                new_line += list(w)
+            else:
+                # if UNK, treat as a special character
+                new_line.append(w)
+
+        return new_line
 
     model.eval()
 
@@ -212,20 +201,27 @@ def bleu_validation(uidx,
 
         # Append result
         for sent_t in word_ids:
-            sent_t = [[wid for wid in line if wid != PAD] for line in sent_t]
+            sent_t = [[wid for wid in line if wid != Vocab.PAD] for line in sent_t]
             x_tokens = []
 
             for wid in sent_t[0]:
-                if wid == EOS:
+                if wid == Vocab.EOS:
                     break
                 x_tokens.append(vocab_tgt.id2token(wid))
 
             if len(x_tokens) > 0:
-                trans.append(vocab_tgt.tokenizer.detokenize(x_tokens))
+                trans.append(' '.join(x_tokens))
             else:
-                trans.append('%s' % vocab_tgt.id2token(EOS))
+                trans.append('%s' % vocab_tgt.id2token(Vocab.EOS))
 
     infer_progress_bar.close()
+
+    # Merge bpe segmentation
+    trans = [line.replace("@@ ", "") for line in trans]
+
+    # Split into characters
+    if eval_at_char_level is True:
+        trans = [' '.join(_split_into_chars(line.strip().split())) for line in trans]
 
     if not os.path.exists(valid_dir):
         os.mkdir(valid_dir)
@@ -285,10 +281,6 @@ def default_configs(configs):
 
     configs["training_configs"].setdefault("buffer_size", 20 * configs["training_configs"]["batch_size"])
 
-    configs["training_configs"].setdefault("update_cycle", 1)
-
-    configs["training_configs"].setdefault("bleu_valid_max_steps", 150)
-
     return configs
 
 
@@ -337,42 +329,47 @@ def train(FLAGS):
     timer.tic()
 
     # Generate target dictionary
-    vocab_src = Vocabulary(**data_configs["vocabularies"][0])
-    vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
+    vocab_src = Vocab(dict_path=data_configs['dictionaries'][0], max_n_words=data_configs['n_words'][0])
+    vocab_tgt = Vocab(dict_path=data_configs['dictionaries'][1], max_n_words=data_configs['n_words'][1])
 
-    train_batch_size = training_configs["batch_size"] * max(1, training_configs["update_cycle"])
-    train_buffer_size = training_configs["buffer_size"] * max(1, training_configs["update_cycle"])
-
-    train_bitext_dataset = ZipDataset(
-        TextLineDataset(data_path=data_configs['train_data'][0],
-                        vocabulary=vocab_src,
-                        max_len=data_configs['max_len'][0],
-                        ),
-        TextLineDataset(data_path=data_configs['train_data'][1],
-                        vocabulary=vocab_tgt,
-                        max_len=data_configs['max_len'][1],
-                        ),
+    train_bitext_dataset = ZipDatasets(
+        TextDataset(data_path=data_configs['train_data'][0],
+                    vocab=vocab_src,
+                    bpe_codes=data_configs['bpe_codes'][0],
+                    max_len=data_configs['max_len'][0],
+                    use_char=data_configs['use_char'][0]
+                    ),
+        TextDataset(data_path=data_configs['train_data'][1],
+                    vocab=vocab_tgt,
+                    bpe_codes=data_configs['bpe_codes'][1],
+                    max_len=data_configs['max_len'][1],
+                    use_char=data_configs['use_char'][1]
+                    ),
         shuffle=training_configs['shuffle']
     )
 
-    valid_bitext_dataset = ZipDataset(
-        TextLineDataset(data_path=data_configs['valid_data'][0],
-                        vocabulary=vocab_src,
-                        ),
-        TextLineDataset(data_path=data_configs['valid_data'][1],
-                        vocabulary=vocab_tgt,
-                        )
+    valid_bitext_dataset = ZipDatasets(
+        TextDataset(data_path=data_configs['valid_data'][0],
+                    vocab=vocab_src,
+                    bpe_codes=data_configs['bpe_codes'][0],
+                    use_char=data_configs['use_char'][0]
+                    ),
+        TextDataset(data_path=data_configs['valid_data'][1],
+                    vocab=vocab_tgt,
+                    bpe_codes=data_configs['bpe_codes'][1],
+                    use_char=data_configs['use_char'][1]
+                    )
     )
 
     training_iterator = DataIterator(dataset=train_bitext_dataset,
-                                     batch_size=train_batch_size,
-                                     use_bucket=training_configs['use_bucket'],
-                                     buffer_size=train_buffer_size,
-                                     batching_func=training_configs['batching_key'])
+                                     batch_size=training_configs['batch_size'],
+                                     sort_buffer=training_configs['use_bucket'],
+                                     buffer_size=training_configs['buffer_size'],
+                                     sort_fn=lambda line: len(line[-1]))
 
     valid_iterator = DataIterator(dataset=valid_bitext_dataset,
                                   batch_size=training_configs['valid_batch_size'],
-                                  use_bucket=False)
+                                  sort_buffer=False)
 
     bleu_scorer = ExternalScriptBLEUScorer(reference_path=data_configs['bleu_valid_reference'],
                                            lang=data_configs['lang_pair'].split('-')[1],
@@ -394,8 +391,14 @@ def train(FLAGS):
     INFO('Building model...')
     timer.tic()
 
-    nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
-                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+    model_cls = model_configs.get("model")
+    if model_cls not in src.models.__all__:
+        raise ValueError(
+            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
+                model_cls, src.models.__all__))
+
+    nmt_model = eval(model_cls)(n_src_vocab=vocab_src.max_n_words,
+                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
 
     critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
@@ -462,8 +465,6 @@ def train(FLAGS):
 
         elif optimizer_configs['schedule_method'] == "noam":
             scheduler = NoamScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
-        elif optimizer_configs['schedule_method'] == "rsqrt":
-            scheduler = RsqrtScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
         else:
             WARN("Unknown scheduler name {0}. Do not use lr_scheduling.".format(optimizer_configs['schedule_method']))
             scheduler = None
@@ -493,7 +494,7 @@ def train(FLAGS):
     for eidx in range(training_configs['max_epochs']):
         summary_writer.add_scalar("Epoch", (eidx + 1), uidx)
 
-        # Build iterator for data I/O and progress bar
+        # Build iterator and progress bar
         training_iter = training_iterator.build_generator()
         training_progress_bar = tqdm(desc='  - (Epoch %d)   ' % eidx,
                                      total=len(training_iterator),
@@ -527,17 +528,17 @@ def train(FLAGS):
             training_progress_bar.update(n_samples_t)
 
             # Prepare data
-            for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
-                x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
+            x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
-                nmt_model.zero_grad()
-                loss = compute_forward(model=nmt_model,
-                                       critic=critic,
-                                       seqs_x=x,
-                                       seqs_y=y,
-                                       eval=False,
-                                       normalization=n_samples_t,
-                                       norm_by_words=training_configs["norm_by_words"])
+            # optim.zero_grad()
+            nmt_model.zero_grad()
+            loss = compute_forward(model=nmt_model,
+                                   critic=critic,
+                                   seqs_x=x,
+                                   seqs_y=y,
+                                   eval=False,
+                                   normalization=n_samples_t,
+                                   norm_by_words=training_configs["norm_by_words"])
             optim.step()
 
             # ================================================================================== #
@@ -618,6 +619,7 @@ def train(FLAGS):
                                              batch_size=training_configs['bleu_valid_batch_size'],
                                              model=nmt_model,
                                              bleu_scorer=bleu_scorer,
+                                             eval_at_char_level=data_configs['eval_at_char_level'],
                                              vocab_tgt=vocab_tgt,
                                              valid_dir=FLAGS.valid_path,
                                              max_steps=training_configs["bleu_valid_max_steps"]
@@ -685,15 +687,16 @@ def translate(FLAGS):
     timer.tic()
 
     # Generate target dictionary
-    vocab_src = Vocabulary(**data_configs["vocabularies"][0])
-    vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
+    vocab_src = Vocab(dict_path=data_configs['dictionaries'][0], max_n_words=data_configs['n_words'][0])
+    vocab_tgt = Vocab(dict_path=data_configs['dictionaries'][1], max_n_words=data_configs['n_words'][1])
 
-    valid_dataset = TextLineDataset(data_path=FLAGS.source_path,
-                                    vocabulary=vocab_src)
+    valid_dataset = TextDataset(data_path=FLAGS.source_path,
+                                vocab=vocab_src,
+                                bpe_codes=data_configs['bpe_codes'][0])
 
     valid_iterator = DataIterator(dataset=valid_dataset,
                                   batch_size=FLAGS.batch_size,
-                                  use_bucket=False)
+                                  sort_buffer=False)
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -701,8 +704,16 @@ def translate(FLAGS):
     # Build Model & Sampler & Validation
     INFO('Building model...')
     timer.tic()
-    nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
-                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+
+    model_cls = model_configs.get("model")
+    if model_cls not in src.models.__all__:
+        raise ValueError(
+            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
+                model_cls, src.models.__all__))
+
+    nmt_model = eval(model_cls)(n_src_vocab=vocab_src.max_n_words,
+                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+
     nmt_model.eval()
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -732,7 +743,7 @@ def translate(FLAGS):
     valid_iter = valid_iterator.build_generator()
     for batch in valid_iter:
 
-        seqs_x = batch
+        seqs_x = batch[0]
 
         batch_size_t = len(seqs_x)
 
@@ -744,7 +755,7 @@ def translate(FLAGS):
 
         # Append result
         for sent_t in word_ids:
-            sent_t = [[wid for wid in line if wid != PAD] for line in sent_t]
+            sent_t = [[wid for wid in line if wid != Vocab.PAD] for line in sent_t]
             result.append(sent_t)
 
             n_words += len(sent_t[0])
@@ -761,10 +772,10 @@ def translate(FLAGS):
         for trans in sent:
             sample = []
             for w in trans:
-                if w == vocab_tgt.EOS:
+                if w == Vocab.EOS:
                     break
                 sample.append(vocab_tgt.id2token(w))
-            samples.append(vocab_tgt.tokenizer.detokenize(sample))
+            samples.append(' '.join(sample))
         translation.append(samples)
 
     keep_n = FLAGS.beam_size if FLAGS.keep_n <= 0 else min(FLAGS.beam_size, FLAGS.keep_n)
