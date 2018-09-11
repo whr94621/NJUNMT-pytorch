@@ -22,6 +22,35 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(GlobalNames.SEED)
 
 
+def split_shard(*inputs, split_size=1):
+    if split_size <= 1:
+        yield inputs
+    else:
+
+        lengths = [len(s) for s in inputs[-1]]  #
+        sorted_indices = np.argsort(lengths)
+
+        # sorting inputs
+
+        inputs = [
+            [inp[ii] for ii in sorted_indices]
+            for inp in inputs
+        ]
+
+        # split shards
+        total_batch = sorted_indices.shape[0]  # total number of batches
+
+        if split_size >= total_batch:
+            yield inputs
+        else:
+            shard_size = total_batch // split_size
+
+            _indices = list(range(total_batch))[::shard_size] + [total_batch]
+
+            for beg, end in zip(_indices[:-1], _indices[1:]):
+                yield (inp[beg:end] for inp in inputs)
+
+
 def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
     """
     Args:
@@ -281,6 +310,8 @@ def default_configs(configs):
 
     configs["training_configs"].setdefault("buffer_size", 20 * configs["training_configs"]["batch_size"])
 
+    configs["training_configs"].setdefault("update_cycle", 1)
+
     return configs
 
 
@@ -332,6 +363,9 @@ def train(FLAGS):
     vocab_src = Vocab(dict_path=data_configs['dictionaries'][0], max_n_words=data_configs['n_words'][0])
     vocab_tgt = Vocab(dict_path=data_configs['dictionaries'][1], max_n_words=data_configs['n_words'][1])
 
+    train_batch_size = training_configs["batch_size"] * max(1, training_configs["update_cycle"])
+    train_buffer_size = training_configs["buffer_size"] * max(1, training_configs["update_cycle"])
+
     train_bitext_dataset = ZipDatasets(
         TextDataset(data_path=data_configs['train_data'][0],
                     vocab=vocab_src,
@@ -362,9 +396,9 @@ def train(FLAGS):
     )
 
     training_iterator = DataIterator(dataset=train_bitext_dataset,
-                                     batch_size=training_configs['batch_size'],
+                                     batch_size=train_batch_size,
                                      sort_buffer=training_configs['use_bucket'],
-                                     buffer_size=training_configs['buffer_size'],
+                                     buffer_size=train_buffer_size,
                                      sort_fn=lambda line: len(line[-1]))
 
     valid_iterator = DataIterator(dataset=valid_bitext_dataset,
@@ -528,17 +562,17 @@ def train(FLAGS):
             training_progress_bar.update(n_samples_t)
 
             # Prepare data
-            x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
+            for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
+                x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
 
-            # optim.zero_grad()
-            nmt_model.zero_grad()
-            loss = compute_forward(model=nmt_model,
-                                   critic=critic,
-                                   seqs_x=x,
-                                   seqs_y=y,
-                                   eval=False,
-                                   normalization=n_samples_t,
-                                   norm_by_words=training_configs["norm_by_words"])
+                nmt_model.zero_grad()
+                loss = compute_forward(model=nmt_model,
+                                       critic=critic,
+                                       seqs_x=x,
+                                       seqs_y=y,
+                                       eval=False,
+                                       normalization=n_samples_t,
+                                       norm_by_words=training_configs["norm_by_words"])
             optim.step()
 
             # ================================================================================== #
