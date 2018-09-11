@@ -9,13 +9,13 @@ from src.modules.cgru import CGRUCell
 from src.modules.rnn import RNN
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
 
+
 class Encoder(nn.Module):
     def __init__(self,
                  n_words,
                  input_size,
                  hidden_size
                  ):
-
         super(Encoder, self).__init__()
 
         # Use PAD
@@ -108,10 +108,9 @@ class Decoder(nn.Module):
 
         return dec_init, dec_cache
 
-
     def forward(self, y, context, context_mask, hidden, one_step=False, cache=None):
 
-        emb = self.embedding(y) # [seq_len, batch_size, dim]
+        emb = self.embedding(y)  # [seq_len, batch_size, dim]
 
         if one_step:
             (out, attn), hidden = self.cgru_cell(emb, hidden, context, context_mask, cache)
@@ -121,7 +120,6 @@ class Decoder(nn.Module):
             attn = []
 
             for emb_t in torch.split(emb, split_size_or_sections=1, dim=0):
-
                 (out_t, attn_t), hidden = self.cgru_cell(emb_t.squeeze(0), hidden, context, context_mask, cache)
                 out += [out_t]
                 attn += [attn_t]
@@ -133,9 +131,10 @@ class Decoder(nn.Module):
 
         logits = F.tanh(logits)
 
-        logits = self.dropout(logits) # [seq_len, batch_size, dim]
+        logits = self.dropout(logits)  # [seq_len, batch_size, dim]
 
         return logits, hidden
+
 
 class Generator(nn.Module):
 
@@ -159,12 +158,12 @@ class Generator(nn.Module):
 
         my_init.embedding_init(self.proj.weight)
 
-
     def forward(self, input):
         """
         input == > Linear == > LogSoftmax
         """
         return self.actn(self.proj(input))
+
 
 class DL4MT(nn.Module):
 
@@ -197,9 +196,11 @@ class DL4MT(nn.Module):
                                  context_mask=ctx_mask,
                                  one_step=False,
                                  hidden=dec_init,
-                                 cache=dec_cache) # [tgt_len, batch_size, dim]
+                                 cache=dec_cache)  # [tgt_len, batch_size, dim]
 
-        return logits.transpose(1, 0).contiguous() # Convert to batch-first mode.
+        logits = logits.transpose(1, 0).contiguous()  # Convert to batch-first mode.
+
+        return self.generator(logits)
 
     def batch_beam_search(self, x, beam_size=5, max_steps=150):
 
@@ -234,11 +235,11 @@ class DL4MT(nn.Module):
             next_scores = next_scores.view(batch_size, beam_size, -1)
             next_scores = mask_scores(next_scores, beam_mask=beam_mask)
 
-            beam_scores = next_scores + beam_scores.unsqueeze(2) # [B, Bm, N] + [B, Bm, 1] ==> [B, Bm, N]
+            beam_scores = next_scores + beam_scores.unsqueeze(2)  # [B, Bm, N] + [B, Bm, 1] ==> [B, Bm, N]
 
             vocab_size = beam_scores.size(-1)
             if t == 0:
-                beam_scores = beam_scores[:,0,:].contiguous()
+                beam_scores = beam_scores[:, 0, :].contiguous()
 
             beam_scores = beam_scores.view(batch_size, -1)
 
@@ -274,7 +275,8 @@ class DL4MT(nn.Module):
 
             # If next_word_ids is EOS, beam_mask_ should be 0.0
             beam_mask_ = 1.0 - next_word_ids.eq(Vocab.EOS).float()
-            next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0), Vocab.PAD) # If last step a EOS is already generated, we replace the last token as PAD
+            next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0),
+                                       Vocab.PAD)  # If last step a EOS is already generated, we replace the last token as PAD
             beam_mask = beam_mask * beam_mask_
 
             # update beam
@@ -301,7 +303,7 @@ class DL4MT(nn.Module):
         if mode == "train":
             assert tgt_seq is not None
 
-            tgt_seq = tgt_seq.transpose(1, 0).contiguous() # length first
+            tgt_seq = tgt_seq.transpose(1, 0).contiguous()  # length first
 
             return self.force_teaching(src_seq, tgt_seq)
 

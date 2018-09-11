@@ -17,7 +17,7 @@ sudo: false
 install: true
 
 before_script:
-  - cp ./unittest/run_all_test.py .
+  - cp ./unittest/run_all_test.sh .
 
 script:
-  - python run_all_test.py
+  - bash run_all_test.sh

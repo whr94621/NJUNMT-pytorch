@@ -1,15 +1,15 @@
 data_configs:
   lang_pair: "zh-en"
   train_data:
-    - "./unittest/data/train/zh.under50.txt"
-    - "./unittest/data/train/en.under50.txt"
+    - "./unittests/data/train/zh.under50.txt"
+    - "./unittests/data/train/en.under50.txt"
   valid_data:
-    - "./unittest/data/dev/zh.0"
-    - "./unittest/data/dev/en.0"
-  bleu_valid_reference: "./unittest/data/dev/en."
+    - "./unittests/data/dev/zh.0"
+    - "./unittests/data/dev/en.0"
+  bleu_valid_reference: "./unittests/data/dev/en."
   dictionaries:
-    - "./unittest/data/dict/dict.zh.json"
-    - "./unittest/data/dict/dict.en.json"
+    - "./unittests/data/dict/dict.zh.json"
+    - "./unittests/data/dict/dict.en.json"
   bpe_codes:
     - ""
     - ""
