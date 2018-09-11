@@ -72,50 +72,40 @@ def compute_forward(model,
                     seqs_y,
                     eval=False,
                     normalization=1.0,
-                    batch_dim=0,
-                    shard_size=-1,
-                    n_correctness=False
+                    norm_by_words=False
                     ):
     """
     :type model: nn.Module
 
     :type critic: NMTCriterion
     """
-
-
-    if eval:
-        model.eval()
-        critic.eval()
-    else:
-        model.train()
-        critic.train()
-
     y_inp = seqs_y[:, :-1].contiguous()
     y_label = seqs_y[:, 1:].contiguous()
 
-    with torch.set_grad_enabled(not eval):
+    words_norm = y_label.ne(Vocab.PAD).float().sum(1)
 
-        dec_outs = model(seqs_x, y_inp)
+    if not eval:
+        model.train()
+        critic.train()
+        # For training
+        with torch.enable_grad():
+            log_probs = model(seqs_x, y_inp)
+            loss = critic(inputs=log_probs, labels=y_label, reduce=False, normalization=normalization)
 
-        loss = critic(generator=model.generator,
-                      shard_size=shard_size,
-                      normalization=normalization,
-                      batch_dim=batch_dim,
-                      eval=eval,
-                      dec_outs=dec_outs,
-                      labels=y_label)
-
-    if n_correctness:
-
+            if norm_by_words:
+                loss = loss.div(words_norm).sum()
+            else:
+                loss = loss.sum()
+        torch.autograd.backward(loss)
+        return loss.item()
+    else:
+        model.eval()
+        critic.eval()
+        # For compute loss
         with torch.no_grad():
-            
-            mask = y_label.ne(Vocab.PAD)
-            pred = model.generator(dec_outs).max(2)[1]  # [batch_size, seq_len]
-            num_correct = y_label.eq(pred).float().masked_select(mask).sum() / normalization
-
-        return loss.item(), num_correct
-
-    return loss.item()
+            log_probs = model(seqs_x, y_inp)
+            loss = critic(inputs=log_probs, labels=y_label, normalization=normalization, reduce=True)
+        return loss.item()
 
 
 def loss_validation(model, critic, valid_iterator):
@@ -131,7 +121,6 @@ def loss_validation(model, critic, valid_iterator):
     n_tokens = 0.0
 
     sum_loss = 0.0
-    sum_correct = 0.0
 
     valid_iter = valid_iterator.build_generator()
 
@@ -143,19 +132,18 @@ def loss_validation(model, critic, valid_iterator):
 
         x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
-        loss, num_correct = compute_forward(model=model,
-                                            critic=critic,
-                                            seqs_x=x,
-                                            seqs_y=y,
-                                            eval=True, n_correctness=True)
+        loss = compute_forward(model=model,
+                               critic=critic,
+                               seqs_x=x,
+                               seqs_y=y,
+                               eval=True)
 
-        if np.any(np.isnan(loss)):
+        if np.isnan(loss):
             WARN("NaN detected!")
 
         sum_loss += float(loss)
-        sum_correct += num_correct
 
-    return float(sum_loss / n_sents), float(sum_correct * 1.0 / n_tokens)
+    return float(sum_loss / n_sents)
 
 
 def bleu_validation(uidx,
@@ -237,7 +225,7 @@ def bleu_validation(uidx,
 
     if not os.path.exists(valid_dir):
         os.mkdir(valid_dir)
-    
+
     hyp_path = os.path.join(valid_dir, 'trans.iter{0}.txt'.format(uidx))
 
     with open(hyp_path, 'w') as f:
@@ -286,6 +274,16 @@ def load_pretrained_model(nmt_model, pretrain_path, map_dict=None, exclude_prefi
         INFO("Pretrained model loaded.")
 
 
+def default_configs(configs):
+    configs["model_configs"].setdefault("label_smoothing", 0.0)
+
+    configs["training_configs"].setdefault("norm_by_words", False)
+
+    configs["training_configs"].setdefault("buffer_size", 20 * configs["training_configs"]["batch_size"])
+
+    return configs
+
+
 def train(FLAGS):
     """
     FLAGS:
@@ -306,6 +304,8 @@ def train(FLAGS):
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
 
+    configs = default_configs(configs)
+
     data_configs = configs['data_configs']
     model_configs = configs['model_configs']
     optimizer_configs = configs['optimizer_configs']
@@ -314,9 +314,6 @@ def train(FLAGS):
     if "seed" in training_configs:
         # Set random seed
         GlobalNames.SEED = training_configs['seed']
-
-    if 'buffer_size' not in training_configs:
-        training_configs['buffer_size'] = 100 * training_configs['batch_size']
 
     saveto_collections = '%s.pkl' % os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_CHECKPOINIS_PREFIX)
     saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
@@ -464,7 +461,7 @@ def train(FLAGS):
         if optimizer_configs['schedule_method'] == "loss":
 
             scheduler = LossScheduler(optimizer=optim, **optimizer_configs['scheduler_configs']
-                                  )
+                                      )
 
         elif optimizer_configs['schedule_method'] == "noam":
             scheduler = NoamScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
@@ -524,11 +521,13 @@ def train(FLAGS):
 
             seqs_x, seqs_y = batch
 
-            batch_size_t = len(seqs_x)
-            cum_samples += batch_size_t
-            cum_words += sum(len(s) for s in seqs_y)
+            n_samples_t = len(seqs_x)
+            n_words_t = sum(len(s) for s in seqs_y)
 
-            training_progress_bar.update(batch_size_t)
+            cum_samples += n_samples_t
+            cum_words += n_words_t
+
+            training_progress_bar.update(n_samples_t)
 
             # Prepare data
             x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
@@ -540,8 +539,8 @@ def train(FLAGS):
                                    seqs_x=x,
                                    seqs_y=y,
                                    eval=False,
-                                   normalization=batch_size_t,
-                                   shard_size=training_configs['shard_size'])
+                                   normalization=n_samples_t,
+                                   norm_by_words=training_configs["norm_by_words"])
             optim.step()
 
             # ================================================================================== #
@@ -592,10 +591,10 @@ def train(FLAGS):
             # Loss Validation & Learning rate annealing
             if np.mod(uidx, training_configs['loss_valid_freq']) == 0 or FLAGS.debug:
 
-                valid_loss, valid_n_correct = loss_validation(model=nmt_model,
-                                                              critic=critic,
-                                                              valid_iterator=valid_iterator,
-                                                              )
+                valid_loss = loss_validation(model=nmt_model,
+                                             critic=critic,
+                                             valid_iterator=valid_iterator,
+                                             )
 
                 model_collections.add_to_collection("history_losses", valid_loss)
 
@@ -603,7 +602,6 @@ def train(FLAGS):
 
                 summary_writer.add_scalar("loss", valid_loss, global_step=uidx)
                 summary_writer.add_scalar("best_loss", min_history_loss, global_step=uidx)
-                summary_writer.add_scalar("n_correct", valid_n_correct, global_step=uidx)
 
                 # If no bess loss model saved, save it.
                 if len(model_collections.get_collection("history_losses")) == 0 or params_best_loss is None:

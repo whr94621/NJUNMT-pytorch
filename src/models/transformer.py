@@ -8,6 +8,7 @@ from src.modules.embeddings import Embeddings
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
 from src.utils import nest
 
+
 def get_attn_causal_mask(seq):
     ''' Get an attention mask to avoid using the subsequent info.
 
@@ -21,6 +22,7 @@ def get_attn_causal_mask(seq):
     if seq.is_cuda:
         subsequent_mask = subsequent_mask.cuda()
     return subsequent_mask
+
 
 class EncoderBlock(nn.Module):
 
@@ -36,19 +38,18 @@ class EncoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, enc_input, slf_attn_mask=None):
-
         input_norm = self.layer_norm(enc_input)
         context, _, _ = self.slf_attn(input_norm, input_norm, input_norm, slf_attn_mask)
         out = self.dropout(context) + enc_input
 
         return self.pos_ffn(out)
 
+
 class Encoder(nn.Module):
 
     def __init__(
             self, n_src_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1):
-
         super().__init__()
 
         self.num_layers = n_layers
@@ -81,6 +82,7 @@ class Encoder(nn.Module):
 
         return out, enc_mask
 
+
 class DecoderBlock(nn.Module):
     ''' Compose with three layers '''
 
@@ -97,7 +99,6 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def compute_cache(self, enc_output):
-
         return self.ctx_attn.compute_cache(enc_output, enc_output)
 
     def forward(self, dec_input, enc_output, slf_attn_mask=None, dec_enc_attn_mask=None,
@@ -111,20 +112,22 @@ class DecoderBlock(nn.Module):
         all_input = input_norm
 
         query, _, self_attn_cache = self.slf_attn(all_input, all_input, input_norm,
-                                     mask=slf_attn_mask, self_attn_cache=self_attn_cache)
+                                                  mask=slf_attn_mask, self_attn_cache=self_attn_cache)
 
         query = self.dropout(query) + dec_input
 
         query_norm = self.layer_norm_2(query)
         mid, attn, enc_attn_cache = self.ctx_attn(enc_output, enc_output, query_norm,
-                                      mask=dec_enc_attn_mask, enc_attn_cache=enc_attn_cache)
+                                                  mask=dec_enc_attn_mask, enc_attn_cache=enc_attn_cache)
 
         output = self.pos_ffn(self.dropout(mid) + query)
 
         return output, attn, self_attn_cache, enc_attn_cache
 
+
 class Decoder(nn.Module):
     ''' A decoder model with self attention mechanism. '''
+
     def __init__(
             self, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1):
@@ -136,7 +139,7 @@ class Decoder(nn.Module):
         self.d_model = d_model
 
         self.embeddings = Embeddings(n_tgt_vocab, d_word_vec,
-                                       dropout=dropout, add_position_embedding=True)
+                                     dropout=dropout, add_position_embedding=True)
 
         self.block_stack = nn.ModuleList([
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
@@ -161,7 +164,7 @@ class Decoder(nn.Module):
         emb = self.embeddings(tgt_seq)
 
         if self_attn_caches is not None:
-            emb = emb[:,-1:].contiguous()
+            emb = emb[:, -1:].contiguous()
             query_len = 1
 
         # Decode mask
@@ -175,7 +178,6 @@ class Decoder(nn.Module):
         new_self_attn_caches = []
         new_enc_attn_caches = []
         for i in range(self.num_layers):
-
             output, attn, self_attn_cache, enc_attn_cache \
                 = self.block_stack[i](output,
                                       enc_output,
@@ -191,10 +193,10 @@ class Decoder(nn.Module):
 
         return output, new_self_attn_caches, new_enc_attn_caches
 
+
 class Generator(nn.Module):
 
     def __init__(self, n_words, hidden_size, shared_weight=None, padding_idx=-1):
-
         super(Generator, self).__init__()
 
         self.n_words = n_words
@@ -207,12 +209,12 @@ class Generator(nn.Module):
         if shared_weight is not None:
             self.proj.linear.weight = shared_weight
 
-
     def forward(self, input):
         """
         input == > Linear == > LogSoftmax
         """
         return self.actn(self.proj(input))
+
 
 class Transformer(nn.Module):
     ''' A sequence to sequence model with attention mechanism. '''
@@ -237,8 +239,8 @@ class Transformer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         assert d_model == d_word_vec, \
-        'To facilitate the residual connections, \
-         the dimensions of all module output shall be the same.'
+            'To facilitate the residual connections, \
+             the dimensions of all module output shall be the same.'
 
         if proj_share_weight:
             self.generator = Generator(n_words=n_tgt_vocab,
@@ -263,13 +265,13 @@ class Transformer(nn.Module):
         enc_output, enc_mask = self.encoder(src_seq)
         dec_output, _, _ = self.decoder(tgt_seq, enc_output, enc_mask)
 
-        return dec_output
+        return self.generator(dec_output)
 
     def batch_beam_search(self, src_seq, beam_size=5, max_steps=150):
 
         batch_size = src_seq.size(0)
 
-        enc_output, enc_mask = self.encoder(src_seq) # [batch_size, seq_len, dim]
+        enc_output, enc_mask = self.encoder(src_seq)  # [batch_size, seq_len, dim]
 
         # dec_caches = self.decoder.compute_caches(enc_output)
 
@@ -277,13 +279,12 @@ class Transformer(nn.Module):
         enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0)
         enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0)
 
-        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(Vocab.BOS) # Word indices in the beam
-        final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0) # length of the sentence
-        beam_mask = enc_output.new(batch_size, beam_size).fill_(1.0) # Mask of beams
-        beam_scores = enc_output.new(batch_size, beam_size).fill_(0.0) # Accumulated scores of the beam
+        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(Vocab.BOS)  # Word indices in the beam
+        final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0)  # length of the sentence
+        beam_mask = enc_output.new(batch_size, beam_size).fill_(1.0)  # Mask of beams
+        beam_scores = enc_output.new(batch_size, beam_size).fill_(0.0)  # Accumulated scores of the beam
 
-
-        self_attn_caches = None # Every element has shape [batch_size * beam_size, num_heads, seq_len, dim_head]
+        self_attn_caches = None  # Every element has shape [batch_size * beam_size, num_heads, seq_len, dim_head]
         enc_attn_caches = None
 
         for t in range(max_steps):
@@ -295,17 +296,17 @@ class Transformer(nn.Module):
                                enc_output=enc_output,
                                enc_mask=enc_mask,
                                enc_attn_caches=enc_attn_caches,
-                               self_attn_caches=self_attn_caches) # [batch_size * beam_size, seq_len, dim]
+                               self_attn_caches=self_attn_caches)  # [batch_size * beam_size, seq_len, dim]
 
-            next_scores = - self.generator(dec_output[:,-1].contiguous()) # [batch_size * beam_size, n_words]
+            next_scores = - self.generator(dec_output[:, -1].contiguous())  # [batch_size * beam_size, n_words]
             next_scores = next_scores.view(batch_size, beam_size, -1)
             next_scores = mask_scores(next_scores, beam_mask=beam_mask)
 
-            beam_scores = next_scores + beam_scores.unsqueeze(2) # [B, Bm, N] + [B, Bm, 1] ==> [B, Bm, N]
+            beam_scores = next_scores + beam_scores.unsqueeze(2)  # [B, Bm, N] + [B, Bm, 1] ==> [B, Bm, N]
 
             vocab_size = beam_scores.size(-1)
             if t == 0:
-                beam_scores = beam_scores[:,0,:].contiguous()
+                beam_scores = beam_scores[:, 0, :].contiguous()
 
             beam_scores = beam_scores.view(batch_size, -1)
 
@@ -344,7 +345,8 @@ class Transformer(nn.Module):
 
             # If next_word_ids is EOS, beam_mask_ should be 0.0
             beam_mask_ = 1.0 - next_word_ids.eq(Vocab.EOS).float()
-            next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0), Vocab.PAD) # If last step a EOS is already generated, we replace the last token as PAD
+            next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0),
+                                       Vocab.PAD)  # If last step a EOS is already generated, we replace the last token as PAD
             beam_mask = beam_mask * beam_mask_
 
             # # If an EOS or PAD is encountered, set the beam mask to 0.0
@@ -357,7 +359,6 @@ class Transformer(nn.Module):
 
             if beam_mask.eq(0.0).all():
                 break
-
 
         scores = beam_scores / (final_lengths + 1e-2)
 
