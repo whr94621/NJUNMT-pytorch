@@ -7,18 +7,13 @@ data_configs:
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/zh.0"
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en.0"
   bleu_valid_reference: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en."
-  dictionaries:
-    - "/home/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
-    - "/home/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
-  bpe_codes:
-    - ""
-    -
-  use_char:
-    - false
-    - false
-  n_words:
-    - 30000
-    - 30000
+  vocabularies:
+    - type: "word"
+      dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
+      max_n_words: 30000
+    - type: "word"
+      dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
+      max_n_words: 30000
   max_len:
     - -1
     - -1

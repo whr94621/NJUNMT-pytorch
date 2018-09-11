@@ -1,5 +1,5 @@
 data_configs:
-  lang_pair: "en-zh"
+  lang_pair: "zh-en"
   train_data:
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/train/zh.under50.txt"
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/train/en.under50.txt"
@@ -7,18 +7,13 @@ data_configs:
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/zh.0"
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en.0"
   bleu_valid_reference: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en."
-  dictionaries:
-    - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
-    - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
-  bpe_codes:
-    - ""
-    - ""
-  use_char:
-    - false
-    - false
-  n_words:
-    - 30000
-    - 30000
+vocabularies:
+  - type: "word"
+    dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
+    max_n_words: 30000
+  - type: "word"
+    dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
+    max_n_words: 30000
   max_len:
     - -1
     - -1

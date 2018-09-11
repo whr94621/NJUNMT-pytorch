@@ -14,3 +14,4 @@ set -e
 
 test_single_file test_dl4mt.py
 test_single_file test_transformer.py
+test_single_file test_bpe.py
