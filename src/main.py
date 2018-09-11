@@ -12,8 +12,7 @@ from src.data.data_iterator import DataIterator
 from src.utils.common_utils import *
 from src.utils.logging import *
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
-import src.models
-from src.models import *
+from src.models import build_model
 from src.modules.criterions import NMTCriterion
 from src.utils.optim import Optimizer
 from src.utils.lr_scheduler import LossScheduler, NoamScheduler
@@ -395,14 +394,8 @@ def train(FLAGS):
     INFO('Building model...')
     timer.tic()
 
-    model_cls = model_configs.get("model")
-    if model_cls not in src.models.__all__:
-        raise ValueError(
-            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
-                model_cls, src.models.__all__))
-
-    nmt_model = eval(model_cls)(n_src_vocab=vocab_src.max_n_words,
-                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+    nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
+                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
 
     critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
@@ -706,16 +699,8 @@ def translate(FLAGS):
     # Build Model & Sampler & Validation
     INFO('Building model...')
     timer.tic()
-
-    model_cls = model_configs.get("model")
-    if model_cls not in src.models.__all__:
-        raise ValueError(
-            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
-                model_cls, src.models.__all__))
-
-    nmt_model = eval(model_cls)(n_src_vocab=vocab_src.max_n_words,
-                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
-
+    nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
+                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     nmt_model.eval()
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
