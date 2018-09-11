@@ -7,13 +7,18 @@ data_configs:
     - "./unittests/data/dev/zh.0"
     - "./unittests/data/dev/en.0"
   bleu_valid_reference: "./unittests/data/dev/en."
-  vocabularies:
-    - type: "word"
-      dict_path: "./unittests/data/dict/dict.zh.json"
-      max_n_words: 501
-    - type: "word"
-      dict_path: "./unittests/data/dict/dict.en.json"
-      max_n_words: 502
+  dictionaries:
+    - "./unittests/data/dict/dict.zh.json"
+    - "./unittests/data/dict/dict.en.json"
+  bpe_codes:
+    - ""
+    - ""
+  use_char:
+    - false
+    - false
+  n_words:
+    - 501
+    - 502
   max_len:
     - 20
     - 20
@@ -49,6 +54,7 @@ training_configs:
   batch_size: 10
   batching_key: "samples"
   update_cycle: -1
+  shard_size: -1
   valid_batch_size: 100
   bleu_valid_batch_size: 3
   bleu_valid_max_steps: 10
