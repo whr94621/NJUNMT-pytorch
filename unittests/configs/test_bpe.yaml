@@ -8,17 +8,18 @@ data_configs:
     - "./unittests/data/dev/en.0"
   bleu_valid_reference: "./unittests/data/dev/en."
   vocabularies:
-    - type: "word"
-      dict_path: "./unittests/data/dict/dict.zh.json"
+    - type: "bpe"
+      dict_path: "./unittests/data/bpe/dict/dict.zh.json"
       max_n_words: 501
-    - type: "word"
-      dict_path: "./unittests/data/dict/dict.en.json"
+      bpe_codes: "./unittests/data/bpe/codes/zh.codes"
+    - type: "bpe"
+      dict_path: "./unittests/data/bpe/dict/dict.en.json"
       max_n_words: 502
+      bpe_codes: "./unittests/data/bpe/codes/en.codes"
   max_len:
     - 20
     - 20
   num_refs: 4
-  eval_at_char_level: false
 
 model_configs:
   model: Transformer
