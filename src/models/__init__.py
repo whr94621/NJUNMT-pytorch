@@ -11,14 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-__all__ = [
-    "Transformer",
-    "DL4MT"
-]
-
-
 from .transformer import Transformer
 from .dl4mt import DL4MT
 
+__all__ = [
+    "build_model",
+]
 
+MODEL_CLS = {
+    "Transformer": Transformer,
+    "DL4MT": DL4MT
+}
+
+
+def build_model(model: str, **kwargs):
+    if model not in MODEL_CLS:
+        raise ValueError(
+            "Invalid model class \'{}\' provided. Only {} are supported now.".format(
+                model, list(MODEL_CLS.keys())))
+
+    return MODEL_CLS[model](**kwargs)
