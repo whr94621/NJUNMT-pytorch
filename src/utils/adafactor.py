@@ -31,6 +31,7 @@ class Adafactor(Optimizer):
   The second-moment estimator v is maintained in a manner similar to Adam:
 
   Several parts of this algorithm are configurable from the initializer.
+
   """
   def __init__(self,
                params, lr=0.01,
@@ -47,7 +48,7 @@ class Adafactor(Optimizer):
     :param lr: learning rate, optional float scalar
     :param betas: (Tuple[float, float], optional): coefficients used for computing
             running averages of gradient and its square (default: (0.9, 0.999))
-            beta1 enables the momentum.
+            beta1 enables the momentum (like adam).
     :param eps: a float, optional term added to the denominator to improve
             numerical stability for [squared_grad, param_scale] (default: 1e-30, 1e-3)
     :param memory_exponent: used for beta2 decay
@@ -93,7 +94,6 @@ class Adafactor(Optimizer):
       group.setdefault("decay_type", "pow")
       group.setdefault("memory_exponent", 0.8)
       group.setdefault("multiply_by_params_scale", True)
-      group.setdefault("grad_clip", 1.0)
 
 
   def step(self, closure=None):
