@@ -1,5 +1,4 @@
 from .optim import Optimizer
-from math import sqrt
 
 
 class LearningRateScheduler(object):
@@ -21,7 +20,6 @@ class LearningRateScheduler(object):
         self.min_lr = min_lr
         self.schedule_freq = schedule_freq
 
-
     def should_scheduler(self, global_step, **kwargs):
         """Condition to schedule learning rate
 
@@ -29,14 +27,13 @@ class LearningRateScheduler(object):
         """
         raise NotImplementedError
 
-
     def get_new_lr(self, old_lr, global_step, **kwargs):
         """Compute new learning rate given the old learning rate
         """
         raise NotImplementedError
 
-
     def step(self, global_step, **kwargs):
+
         if self.should_scheduler(global_step, **kwargs):
             new_lrs = []
 
@@ -46,7 +43,7 @@ class LearningRateScheduler(object):
             self.optimizer.set_lrate(new_lrs)
 
             return True
-    
+
         return False
 
 
@@ -141,24 +138,3 @@ class NoamScheduler(LearningRateScheduler):
                                  global_step * self.warmup_steps ** (-1.5))
 
         return new_lr
-
-
-class RsqrtScheduler(LearningRateScheduler):
-    def __init__(self, optimizer, d_model, schedule_freq=1, warmup_steps=4000, min_lr=-1.0):
-        """
-        Args:
-          optimizer: An instance of ```optim.Optimizer```
-          schedule_freq: The interval the scheduler should be triggered. Default is 1
-          min_lr: The minimum learning rate
-          d_model: Int. The dimension of the model.
-          warmup_steps: Int. The scheduler can not be triggered within these steps.
-        """
-        super().__init__(optimizer, schedule_freq, min_lr)
-        self.d_model = d_model
-        self.warmup_steps = warmup_steps
-
-    def should_scheduler(self, global_step, **kwargs):
-        return True
-
-    def get_new_lr(self, old_lr, global_step, **kwargs):
-        return min(1e-2, 1 / sqrt(max(global_step, self.warmup_steps) + 1e4 - self.warmup_steps))

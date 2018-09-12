@@ -31,14 +31,14 @@ model_configs:
 
 optimizer_configs:
   optimizer: "adam"
-  learning_rate: 2.0
-  grad_clip: 0.0
+  learning_rate: 0.0005
+  grad_clip: 1.0
   optimizer_params: ~ # other arguments for optimizer.
-  schedule_method: noam
+  schedule_method: loss
   scheduler_configs:
-    d_model: 24
-    warmup_steps: 8000
-    schedule_freq: 1
+    patience: 2
+    min_lr: 0.00005
+    scale: 0.5
 
 training_configs:
   seed: 1234
