@@ -33,22 +33,21 @@ model_configs:
 
 optimizer_configs:
   optimizer: "adam"
-  learning_rate: 1.0
+  learning_rate: 0.1
   grad_clip: -1.0
   optimizer_params: ~
   schedule_method: noam # ["loss" | "noam" | ~], see details in ./lr_schedule_examples
   scheduler_configs:
     d_model: *dim
     warmup_steps: 4000
-    schedule_freq: 1
 
 training_configs:
   max_epochs: 1000000
   shuffle: true
-  use_bucket: false # Whether to use bucket. If true, model will run faster while a little bit performance regression.
-  buffer_size: 100 # Only valid when use_bucket is true.
-  shard_size: -1 # Shard size. Negative value if closed.
-  batch_size: 50
+  use_bucket: true # Whether to use bucket. If true, model will run faster while a little bit performance regression.
+  batching_key: "tokens"
+  batch_size: 4096
+  update_cycle: 1
   valid_batch_size: 50
   bleu_valid_batch_size: 10
   bleu_valid_max_steps: 50

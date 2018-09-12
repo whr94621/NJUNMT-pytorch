@@ -30,23 +30,21 @@ model_configs:
 optimizer_configs:
   optimizer: "adam"
   learning_rate: 0.0005
-  grad_clip: 5.0
+  grad_clip: 1.0
   optimizer_params: ~
   schedule_method: loss # ["loss" | "noam" | ~], see details in ./lr_schedule_examples
   scheduler_configs:
-    warmup_steps: 8000
-    decay_scale: 0.5
+    scale: 0.5
     min_lr: 0.00005
-    max_patience: 20
-    schedule_freq: 100
+    patience: 20
 
 training_configs:
   max_epochs: 1000000
   shuffle: true
   use_bucket: true # Whether to use bucket. If true, model will run faster while a little bit performance regression.
-  buffer_size: 1000 # Only valid when use_bucket is true.
-  shard_size: -1 # Shard size. Negative value if closed.
+  batching_key: "samples"
   batch_size: 50
+  update_cycle: 1
   valid_batch_size: 50
   bleu_valid_batch_size: 10
   bleu_valid_warmup: 10000 # Start to do BLEU validation after those steps
