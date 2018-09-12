@@ -37,11 +37,11 @@ model_configs:
   label_smoothing: 0.1
 
 optimizer_configs:
-  optimizer: "adam"
-  learning_rate: 1.0
-  grad_clip: -1.0
+  optimizer: "adafactor"
+  learning_rate: 0
+  grad_clip: 1.0
   optimizer_params: ~
-  schedule_method: noam # ["loss" | "noam" | ~], see details in ./lr_schedule_examples
+  schedule_method: rsqrt
   scheduler_configs:
     d_model: *dim
     warmup_steps: 4000

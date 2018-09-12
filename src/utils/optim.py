@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import torch.optim
+from src.utils.adafactor import Adafactor
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
 # Setup optimizer (should always come after model.cuda())
@@ -22,6 +23,7 @@ class Optimizer(object):
         'asgd':       torch.optim.ASGD,
         'rprop':      torch.optim.Rprop,
         'rmsprop':    torch.optim.RMSprop,
+        'adafactor':  Adafactor
     }
 
     @staticmethod

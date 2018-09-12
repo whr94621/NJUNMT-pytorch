@@ -14,7 +14,7 @@ import src.models
 from src.models import *
 from src.modules.criterions import NMTCriterion
 from src.utils.optim import Optimizer
-from src.utils.lr_scheduler import LossScheduler, NoamScheduler
+from src.utils.lr_scheduler import LossScheduler, NoamScheduler, RsqrtScheduler
 
 # Fix random seed
 torch.manual_seed(GlobalNames.SEED)
@@ -468,6 +468,8 @@ def train(FLAGS):
 
         elif optimizer_configs['schedule_method'] == "noam":
             scheduler = NoamScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
+        elif optimizer_configs['schedule_method'] == "rsqrt":
+            scheduler = RsqrtScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
         else:
             WARN("Unknown scheduler name {0}. Do not use lr_scheduling.".format(optimizer_configs['schedule_method']))
             scheduler = None
@@ -497,7 +499,7 @@ def train(FLAGS):
     for eidx in range(training_configs['max_epochs']):
         summary_writer.add_scalar("Epoch", (eidx + 1), uidx)
 
-        # Build iterator and progress bar
+        # Build iterator for data I/O and progress bar
         training_iter = training_iterator.build_generator()
         training_progress_bar = tqdm(desc='  - (Epoch %d)   ' % eidx,
                                      total=len(training_iterator),
