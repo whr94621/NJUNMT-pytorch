@@ -43,7 +43,6 @@ optimizer_configs:
   scheduler_configs:
     d_model: 24
     warmup_steps: 8000
-    schedule_freq: 1
 
 training_configs:
   seed: 1234
