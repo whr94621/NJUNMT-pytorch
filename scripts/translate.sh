@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=3
 
-N=$1
+export MODEL_NAME="transformer"
 
-#export THEANO_FLAGS=device=cuda3,floatX=float32,mode=FAST_RUN
-export MODEL_NAME="transformer-zh2en-word30K"
-
-python3 ./translate.py \
+for i in 2 3 4 5 6; 
+do 
+python ../translate.py \
     --model_name $MODEL_NAME \
-    --source_path "/home/weihr/NMT_DATA_PY3/1.34M/unittest/MT0$1/src.txt" \
-    --model_path "./save/$MODEL_NAME.best.tpz" \
-    --config_path "./configs.yaml" \
+    --source_path "/home/user_data/zouw/zh2en_134W/testsets/mt0$i.src.tok" \
+    --model_path "./save_adam/$MODEL_NAME.best.tpz" \
+    --config_path "../configs/transformer_base_config.yaml" \
     --batch_size 20 \
     --beam_size 5 \
-    --saveto "./result/$MODEL_NAME.MT0$1.txt" \
-    --source_bpe_codes "" \
-    --use_gpu
+    --saveto "mt0$i.txt" \
+    --keep_n 1 \
+	--use_gpu
+done;
