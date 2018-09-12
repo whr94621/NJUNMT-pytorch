@@ -14,8 +14,8 @@ from src.utils.logging import *
 from src.metric.bleu_scorer import ExternalScriptBLEUScorer
 from src.models import build_model
 from src.modules.criterions import NMTCriterion
-from src.utils.optim import Optimizer
-from src.utils.lr_scheduler import LossScheduler, NoamScheduler
+from src.optim import Optimizer
+from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
 
 # Fix random seed
 torch.manual_seed(GlobalNames.SEED)
@@ -457,8 +457,9 @@ def train(FLAGS):
 
         if optimizer_configs['schedule_method'] == "loss":
 
-            scheduler = LossScheduler(optimizer=optim, **optimizer_configs['scheduler_configs']
-                                      )
+            scheduler = ReduceOnPlateauScheduler(optimizer=optim,
+                                                 **optimizer_configs["scheduler_configs"]
+                                                 )
 
         elif optimizer_configs['schedule_method'] == "noam":
             scheduler = NoamScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
@@ -479,7 +480,7 @@ def train(FLAGS):
 
     cum_samples = 0
     cum_words = 0
-    valid_loss = 1.0 * 1e12  # Max Float
+    best_valid_loss = 1.0 * 1e10  # Max Float
     saving_files = []
 
     # Timer for computing speed
@@ -501,18 +502,10 @@ def train(FLAGS):
 
             uidx += 1
 
-            # ================================================================================== #
-            # Learning rate annealing
-
-            if scheduler is not None and (np.mod(uidx, scheduler.schedule_freq) == 0 or FLAGS.debug):
-
-                if scheduler.step(global_step=uidx, loss=valid_loss):
-
-                    if optimizer_configs['schedule_method'] == "loss":
-                        nmt_model.load_state_dict(params_best_loss)
-
-                new_lr = list(optim.get_lrate())[0]
-                summary_writer.add_scalar("lrate", new_lr, global_step=uidx)
+            if training_configs["schedule_method"] == "loss":
+                scheduler.step(metric=best_valid_loss)
+            else:
+                scheduler.setp(global_step=uidx)
 
             seqs_x, seqs_y = batch
 
@@ -598,12 +591,7 @@ def train(FLAGS):
                 summary_writer.add_scalar("loss", valid_loss, global_step=uidx)
                 summary_writer.add_scalar("best_loss", min_history_loss, global_step=uidx)
 
-                # If no bess loss model saved, save it.
-                if len(model_collections.get_collection("history_losses")) == 0 or params_best_loss is None:
-                    params_best_loss = nmt_model.state_dict()
-
-                if valid_loss <= min_history_loss:
-                    params_best_loss = nmt_model.state_dict()  # Export best variables
+                best_valid_loss = min_history_loss
 
             # ================================================================================== #
             # BLEU Validation & Early Stop
