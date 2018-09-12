@@ -94,12 +94,12 @@ class ReduceOnPlateauScheduler(LearningRateScheduler):
     def update_lr(self, old_lr, metric):
 
         if self.mode == "max":
-            if metric > self.best:
+            if metric > self._state["best"]:
                 self._state["bad_count"] = 0
             else:
                 self._state["bad_count"] += 1
         else:
-            if metric < self.best:
+            if metric < self._state["best"]:
                 self._state["bad_count"] = 0
             else:
                 self._state["bad_count"] += 1

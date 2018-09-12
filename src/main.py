@@ -502,10 +502,10 @@ def train(FLAGS):
 
             uidx += 1
 
-            if training_configs["schedule_method"] == "loss":
+            if optimizer_configs["schedule_method"] == "loss":
                 scheduler.step(metric=best_valid_loss)
             else:
-                scheduler.setp(global_step=uidx)
+                scheduler.step(global_step=uidx)
 
             seqs_x, seqs_y = batch
 
