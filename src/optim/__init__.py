@@ -11,6 +11,7 @@
 import torch.optim
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from .adamw import AdamW
+from .adafactor import Adafactor
 
 
 class Optimizer(object):
@@ -23,7 +24,8 @@ class Optimizer(object):
         'asgd': torch.optim.ASGD,
         'rprop': torch.optim.Rprop,
         'rmsprop': torch.optim.RMSprop,
-        "adamw": AdamW
+        "adamw": AdamW,
+        "adafactor": Adafactor
     }
 
     @staticmethod
