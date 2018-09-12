@@ -57,7 +57,7 @@ training_configs:
   valid_batch_size: 50
   bleu_valid_batch_size: 10
   bleu_valid_max_steps: 50
-  bleu_valid_warmup: 2000 # Start to do BLEU validation after those steps
+  bleu_valid_warmup: 10000 # Start to do BLEU validation after those steps
   bleu_valid_configs:
     bleu_script: "multi-bleu"
     lowercase: true

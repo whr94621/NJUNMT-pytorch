@@ -10,45 +10,44 @@ class LearningRateScheduler(object):
         - ```get_new_lr``` is the function to compute the new learning rate.
     """
 
-
-def __init__(self, optimizer, schedule_freq, min_lr=-1.0):
-    """
-    Args:
-        optimizer: An instance of ```optim.Optimizer```
-        schedule_freq: The interval the scheduler should be triggered
-        min_lr: The minimum learning rate
-    """
-    self.optimizer = optimizer  # type:Optimizer
-    self.min_lr = min_lr
-    self.schedule_freq = schedule_freq
-
-
-def should_scheduler(self, global_step, **kwargs):
-    """Condition to schedule learning rate
-
-    Whether to anneal learning rate given some criteria.
-    """
-    raise NotImplementedError
+    def __init__(self, optimizer, schedule_freq, min_lr=-1.0):
+        """
+        Args:
+            optimizer: An instance of ```optim.Optimizer```
+            schedule_freq: The interval the scheduler should be triggered
+            min_lr: The minimum learning rate
+        """
+        self.optimizer = optimizer  # type:Optimizer
+        self.min_lr = min_lr
+        self.schedule_freq = schedule_freq
 
 
-def get_new_lr(self, old_lr, global_step, **kwargs):
-    """Compute new learning rate given the old learning rate
-    """
-    raise NotImplementedError
+    def should_scheduler(self, global_step, **kwargs):
+        """Condition to schedule learning rate
+
+        Whether to anneal learning rate given some criteria.
+        """
+        raise NotImplementedError
 
 
-def step(self, global_step, **kwargs):
-    if self.should_scheduler(global_step, **kwargs):
-        new_lrs = []
+    def get_new_lr(self, old_lr, global_step, **kwargs):
+        """Compute new learning rate given the old learning rate
+        """
+        raise NotImplementedError
 
-        for old_lr in self.optimizer.get_lrate():
-            new_lrs.append(self.get_new_lr(old_lr, global_step, **kwargs))
 
-        self.optimizer.set_lrate(new_lrs)
+    def step(self, global_step, **kwargs):
+        if self.should_scheduler(global_step, **kwargs):
+            new_lrs = []
 
-        return True
+            for old_lr in self.optimizer.get_lrate():
+                new_lrs.append(self.get_new_lr(old_lr, global_step, **kwargs))
 
-    return False
+            self.optimizer.set_lrate(new_lrs)
+
+            return True
+    
+        return False
 
 
 class LossScheduler(LearningRateScheduler):
