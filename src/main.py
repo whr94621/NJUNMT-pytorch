@@ -11,7 +11,7 @@ from src.data.dataset import TextLineDataset, ZipDataset
 from src.data.data_iterator import DataIterator
 from src.utils.common_utils import *
 from src.utils.logging import *
-from src.metric.bleu_scorer import ExternalScriptBLEUScorer
+from src.metric.bleu_scorer import SacreBLEUScorer
 from src.models import build_model
 from src.modules.criterions import NMTCriterion
 from src.optim import Optimizer
@@ -458,13 +458,12 @@ def train(FLAGS):
                                   batch_size=training_configs['valid_batch_size'],
                                   use_bucket=False)
 
-    bleu_scorer = ExternalScriptBLEUScorer(reference_path=data_configs['bleu_valid_reference'],
-                                           lang=data_configs['lang_pair'].split('-')[1],
-                                           bleu_script=training_configs['bleu_valid_configs']['bleu_script'],
-                                           digits_only=True,
-                                           lc=training_configs['bleu_valid_configs']['lowercase'],
-                                           postprocess=training_configs['bleu_valid_configs']['postprocess']
-                                           )
+    bleu_scorer = SacreBLEUScorer(reference_path=data_configs["bleu_valid_reference"],
+                                  num_refs=data_configs["num_refs"],
+                                  lang_pair=data_configs["lang_pair"],
+                                  sacrebleu_args=training_configs["bleu_valid_configs"]["sacrebleu_args"],
+                                  postprocess=training_configs["bleu_valid_configs"]["postprocess"]
+                                  )
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
