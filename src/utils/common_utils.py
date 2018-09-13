@@ -15,8 +15,10 @@ __all__ = [
     'Vocab',
     'sequence_mask',
     'build_vocab_shortlist',
-    'to_gpu'
+    'to_gpu',
+    'should_trigger_by_steps'
 ]
+
 
 # ================================================================================== #
 # File I/O Utils
@@ -56,6 +58,7 @@ class GlobalNames:
 
 time_format = '%Y-%m-%d %H:%M:%S'
 
+
 class Timer(object):
     def __init__(self):
         self.t0 = 0
@@ -77,8 +80,8 @@ class Timer(object):
         h, m = divmod(m, 60)
         return '%d:%02d:%02d' % (h, m, s)
 
-class Collections(object):
 
+class Collections(object):
     """Collections for logs during training.
 
     Usually we add loss and valid metrics to some collections after some steps.
@@ -128,12 +131,13 @@ class Collections(object):
             return []
         else:
             return self._kv_stores[key]
+
     @staticmethod
     def pickle(path, **kwargs):
         """
         :type path: str
         """
-        archives_ = dict([(k,v) for k,v in kwargs.items()])
+        archives_ = dict([(k, v) for k, v in kwargs.items()])
 
         if not path.endswith(".pkl"):
             path = path + ".pkl"
@@ -150,8 +154,8 @@ class Collections(object):
 
         return archives_
 
-class Vocab(object):
 
+class Vocab(object):
     PAD = 0
     EOS = 1
     UNK = 3
@@ -192,7 +196,7 @@ class Vocab(object):
             "<UNK>": (Vocab.UNK, 0),
             "<EOS>": (Vocab.EOS, 0),
             "<BOS>": (Vocab.BOS, 0)
-                }
+        }
 
     def token2id(self, word):
 
@@ -211,18 +215,18 @@ class Vocab(object):
 
         return [0, 1, 2]
 
-def sequence_mask(seqs_length):
 
+def sequence_mask(seqs_length):
     maxlen = np.max(seqs_length)
 
     row_vector = np.arange(maxlen)
 
-    mask = row_vector[None,:] < np.expand_dims(seqs_length, -1)
+    mask = row_vector[None, :] < np.expand_dims(seqs_length, -1)
 
     return mask.astype('float32')
 
-def build_vocab_shortlist(shortlist):
 
+def build_vocab_shortlist(shortlist):
     shortlist_ = nest.flatten(shortlist)
 
     shortlist_ = sorted(list(set(shortlist_)))
@@ -234,6 +238,51 @@ def build_vocab_shortlist(shortlist):
 
     return shortlist_np, map_to_shortlist, map_from_shortlist
 
-def to_gpu(*inputs):
 
+def to_gpu(*inputs):
     return list(map(lambda x: x.cuda(), inputs))
+
+
+def _min_cond_to_trigger(global_step, n_epoch, min_step=-1):
+    """
+    If min_step is an integer within (0,10]
+
+    global_step is the minimum number of epochs to trigger action.
+    Otherwise it is the minimum number of steps.
+    """
+    if min_step > 0 and min_step <= 50:
+        if n_epoch >= min_step:
+            return True
+        else:
+            return False
+    else:
+        if global_step >= min_step:
+            return True
+        else:
+            return False
+
+
+def should_trigger_by_steps(global_step,
+                            n_epoch,
+                            every_n_step,
+                            min_step=-1,
+                            debug=False):
+    """
+    When to trigger bleu evaluation.
+    """
+    # Debug mode
+
+    if debug:
+        return True
+
+    # Not setting condition
+
+    if every_n_step <= 0:
+        return False
+
+    if _min_cond_to_trigger(global_step=global_step, n_epoch=n_epoch, min_step=min_step):
+
+        if np.mod(global_step, every_n_step) == 0:
+            return True
+        else:
+            return False
