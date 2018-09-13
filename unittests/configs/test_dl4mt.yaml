@@ -59,7 +59,7 @@ training_configs:
     postprocess: false
   disp_freq: 100
   save_freq: 1000
-  keep_checkpoint_max: 1
+  num_kept_checkpoints: 1
   loss_valid_freq: &decay_freq 10
   bleu_valid_freq: 100
   early_stop_patience: 20

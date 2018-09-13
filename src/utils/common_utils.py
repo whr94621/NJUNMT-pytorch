@@ -1,8 +1,6 @@
-import sys
 import time
 import contextlib
-import pickle as pkl
-import json
+import copy
 import numpy as np
 
 from . import nest
@@ -12,8 +10,6 @@ __all__ = [
     'GlobalNames',
     'Timer',
     'Collections',
-    'Vocab',
-    'sequence_mask',
     'build_vocab_shortlist',
     'to_gpu',
     'should_trigger_by_steps'
@@ -96,13 +92,6 @@ class Collections(object):
             name = Collections._MY_COLLECTIONS_NAME
         self._name = name
 
-    def load(self, archives):
-
-        if self._name in archives:
-            self._kv_stores = archives[self._name]
-        else:
-            self._kv_stores = []
-
     def add_to_collection(self, key, value):
         """
         Add value to collection
@@ -117,10 +106,7 @@ class Collections(object):
         else:
             self._kv_stores[key].append(value)
 
-    def export(self):
-        return {self._name: self._kv_stores}
-
-    def get_collection(self, key):
+    def get_collection(self, key, default=[]):
         """
         Get the collection given a key
 
@@ -128,103 +114,17 @@ class Collections(object):
         :param key: Key of the collection
         """
         if key not in self._kv_stores:
-            return []
+            return default
         else:
             return self._kv_stores[key]
 
-    @staticmethod
-    def pickle(path, **kwargs):
-        """
-        :type path: str
-        """
-        archives_ = dict([(k, v) for k, v in kwargs.items()])
+    def state_dict(self):
 
-        if not path.endswith(".pkl"):
-            path = path + ".pkl"
+        return self._kv_stores
 
-        with open(path, 'wb') as f:
-            pkl.dump(archives_, f)
+    def load_state_dict(self, state_dict):
 
-    @staticmethod
-    def unpickle(path):
-        """:type path: str"""
-
-        with open(path, 'rb') as f:
-            archives_ = pkl.load(f)
-
-        return archives_
-
-
-class Vocab(object):
-    PAD = 0
-    EOS = 1
-    UNK = 3
-    BOS = 2
-
-    def __init__(self, dict_path, max_n_words=-1):
-
-        with open(dict_path) as f:
-            _dict = json.load(f)
-
-        # Word to word index and word frequence.
-        self._token2id_feq = self._init_dict()
-
-        N = len(self._token2id_feq)
-
-        for ww, vv in _dict.items():
-            if isinstance(vv, int):
-                self._token2id_feq[ww] = (vv + N, 0)
-            else:
-                self._token2id_feq[ww] = (vv[0] + N, vv[1])
-
-        self._id2token = dict([(ii[0], ww) for ww, ii in self._token2id_feq.items()])
-
-        self._max_n_words = max_n_words
-
-    @property
-    def max_n_words(self):
-
-        if self._max_n_words == -1:
-            return len(self._token2id_feq)
-        else:
-            return self._max_n_words
-
-    def _init_dict(self):
-
-        return {
-            "<PAD>": (Vocab.PAD, 0),
-            "<UNK>": (Vocab.UNK, 0),
-            "<EOS>": (Vocab.EOS, 0),
-            "<BOS>": (Vocab.BOS, 0)
-        }
-
-    def token2id(self, word):
-
-        if word in self._token2id_feq and self._token2id_feq[word][0] < self.max_n_words:
-
-            return self._token2id_feq[word][0]
-        else:
-            return Vocab.UNK
-
-    def id2token(self, id):
-
-        return self._id2token[id]
-
-    @staticmethod
-    def special_ids():
-
-        return [0, 1, 2]
-
-
-def sequence_mask(seqs_length):
-    maxlen = np.max(seqs_length)
-
-    row_vector = np.arange(maxlen)
-
-    mask = row_vector[None, :] < np.expand_dims(seqs_length, -1)
-
-    return mask.astype('float32')
-
+        self._kv_stores = copy.deepcopy(state_dict)
 
 def build_vocab_shortlist(shortlist):
     shortlist_ = nest.flatten(shortlist)

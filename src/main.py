@@ -27,6 +27,87 @@ EOS = Vocabulary.EOS
 PAD = Vocabulary.PAD
 
 
+def save_checkpoint(saveto_prefix,
+                    global_step,
+                    model,
+                    optim,
+                    lr_scheduler,
+                    collections,
+                    max_keeps=1,
+                    **kwargs):
+    """ Saving checkpoints
+
+    Checkpoints will be saved as such format:
+        saveto_prefix.ckpt.[global_step].model
+        saveto_prefix.ckpt.[global_step].optim
+        saveto_prefix.ckpt.[global_step].collections
+    """
+    saveto_dir = os.path.dirname(saveto_prefix)
+
+    if not os.path.exists(saveto_dir):
+        os.mkdir(saveto_dir)
+
+    ckpt_list_path = saveto_prefix + ".checkpoints"
+
+    if os.path.exists(ckpt_list_path):
+        with open(ckpt_list_path) as f:
+            ckpt_list = f.readlines()
+        ckpt_list = [line.strip() for line in ckpt_list]
+    else:
+        ckpt_list = []
+
+    ckpt_state_dict = dict()
+
+    ckpt_state_dict["model"] = model.state_dict()
+    ckpt_state_dict["optim"] = optim.state_dict()
+    if lr_scheduler is not None:
+        ckpt_state_dict["lr_scheduler"] = lr_scheduler.state_dict()
+    ckpt_state_dict["collections"] = collections.state_dict()
+
+    saveto_path = saveto_prefix + ".ckpt." + str(global_step)
+    torch.save(ckpt_state_dict, saveto_path)
+
+    ckpt_list.append(os.path.basename(saveto_path))
+
+    if len(ckpt_list) > max_keeps:
+        out_of_date_ckpt = ckpt_list.pop(0)
+        os.remove(os.path.join(saveto_dir, out_of_date_ckpt))
+
+    with open(ckpt_list_path, 'w') as f:
+        f.write('\n'.join(ckpt_list))
+
+
+def load_latest_checkpoint(saveto_prefix,
+                           model,
+                           optim,
+                           lr_scheduler,
+                           collections):
+    saveto_dir = os.path.dirname(saveto_prefix)
+    ckpt_list_path = saveto_prefix + ".checkpoints"
+
+    if not os.path.exists(ckpt_list_path):
+        return
+
+    with open(ckpt_list_path) as f:
+        ckpt_list = f.readlines()
+
+    latest_ckpt = ckpt_list[-1].strip()
+    latest_ckpt_path = os.path.join(saveto_dir, latest_ckpt)
+
+    ckpt_state_dict = torch.load(latest_ckpt_path)
+
+    uidx = ckpt_state_dict['uidx']
+    eidx = ckpt_state_dict['eidx']
+
+    model.load_state_dict(ckpt_state_dict['model'])
+    optim.load_state_dict(ckpt_state_dict['optim'])
+    if lr_scheduler is not None:
+        lr_scheduler.load_state_dict(ckpt_state_dict['lr_scheduler'])
+    collections.load_state_dict(ckpt_state_dict['collections'])
+
+    return uidx, eidx
+
+
 def split_shard(*inputs, split_size=1):
     if split_size <= 1:
         yield inputs
@@ -242,7 +323,7 @@ def bleu_validation(uidx,
     return bleu_v
 
 
-def load_pretrained_model(nmt_model, pretrain_path, map_dict=None, exclude_prefix=None):
+def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None):
     """
     Args:
         nmt_model: model.
@@ -260,7 +341,7 @@ def load_pretrained_model(nmt_model, pretrain_path, map_dict=None, exclude_prefi
         exclude_prefix = []
     if pretrain_path != "":
         INFO("Loading pretrained model from {}".format(pretrain_path))
-        pretrain_params = torch.load(pretrain_path)
+        pretrain_params = torch.load(pretrain_path, map_location=device)
         for name, params in pretrain_params.items():
             flag = False
             for pp in exclude_prefix:
@@ -289,6 +370,8 @@ def default_configs(configs):
 
     configs["training_configs"].setdefault("bleu_valid_max_steps", 150)
 
+    configs["training_configs"].setdefault("num_kept_checkpoints", 1)
+
     return configs
 
 
@@ -308,12 +391,16 @@ def train(FLAGS):
 
     GlobalNames.USE_GPU = FLAGS.use_gpu
 
+    if GlobalNames.USE_GPU:
+        CURRENT_DEVICE = "cpu"
+    else:
+        CURRENT_DEVICE = "cuda:0"
+
     config_path = os.path.abspath(FLAGS.config_path)
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
-
+    # Add default configs
     configs = default_configs(configs)
-
     data_configs = configs['data_configs']
     model_configs = configs['model_configs']
     optimizer_configs = configs['optimizer_configs']
@@ -323,10 +410,7 @@ def train(FLAGS):
         # Set random seed
         GlobalNames.SEED = training_configs['seed']
 
-    saveto_collections = '%s.pkl' % os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_CHECKPOINIS_PREFIX)
     saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
-    saveto_best_optim_params = os.path.join(FLAGS.saveto,
-                                            FLAGS.model_name + GlobalNames.MY_BEST_OPTIMIZER_PARAMS_SUFFIX)
 
     timer = Timer()
 
@@ -384,16 +468,25 @@ def train(FLAGS):
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
-    model_collections = Collections()
-
     lrate = optimizer_configs['learning_rate']
     is_early_stop = False
 
-    # ================================================================================== #
-    # Build Model & Sampler & Validation
+    # ================================ Begin ======================================== #
+    # Build Model & Optimizer
+    # We would do steps below on after another
+    #     1. build models & criterion
+    #     2. move models & criterion to gpu if needed
+    #     3. load pre-trained model if needed
+    #     4. build optimizer
+    #     5. build learning rate scheduler if needed
+    #     6. load checkpoints if needed
+
+    # 0. Initial collections
+    model_collections = Collections()
+
+    # 1. Build Model & Criterion
     INFO('Building model...')
     timer.tic()
-
     nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
                             n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
@@ -403,6 +496,15 @@ def train(FLAGS):
     INFO(critic)
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
+    # 2. Move to GPU
+    if GlobalNames.USE_GPU:
+        nmt_model = nmt_model.cuda()
+        critic = critic.cuda()
+
+    # 3. Load pretrained model if needed
+    load_pretrained_model(nmt_model, FLAGS.pretrain_path, exclude_prefix=None, device=CURRENT_DEVICE)
+
+    # 4. Build optimizer
     INFO('Building Optimizer...')
     optim = Optimizer(name=optimizer_configs['optimizer'],
                       model=nmt_model,
@@ -410,49 +512,7 @@ def train(FLAGS):
                       grad_clip=optimizer_configs['grad_clip'],
                       optim_args=optimizer_configs['optimizer_params']
                       )
-
-    # Initialize training indicators
-    uidx = 0
-    bad_count = 0
-
-    # Whether Reloading model
-    if FLAGS.reload is True and os.path.exists(saveto_best_model):
-        timer.tic()
-        INFO("Reloading model...")
-        params = torch.load(saveto_best_model)
-        nmt_model.load_state_dict(params)
-
-        model_archives = Collections.unpickle(path=saveto_collections)
-        model_collections.load(archives=model_archives)
-
-        uidx = model_archives['uidx']
-        bad_count = model_archives['bad_count']
-
-        INFO("Done. Model reloaded.")
-
-        if os.path.exists(saveto_best_optim_params):
-            INFO("Reloading optimizer params...")
-            optimizer_params = torch.load(saveto_best_optim_params)
-            optim.optim.load_state_dict(optimizer_params)
-
-            INFO("Done. Optimizer params reloaded.")
-        elif uidx > 0:
-            INFO("Failed to reload optimizer params: {} does not exist".format(
-                saveto_best_optim_params))
-
-        INFO('Done. Elapsed time {0}'.format(timer.toc()))
-    # New training. Check if pretraining needed
-    else:
-        # pretrain
-        load_pretrained_model(nmt_model, FLAGS.pretrain_path, exclude_prefix=None)
-
-    if GlobalNames.USE_GPU:
-        nmt_model = nmt_model.cuda()
-        critic = critic.cuda()
-
-    # Configure Learning Scheduler
-    # Here we have two policies, "loss" and "noam"
-
+    # 5. Build scheduler for optimizer if needed
     if optimizer_configs['schedule_method'] is not None:
 
         if optimizer_configs['schedule_method'] == "loss":
@@ -471,10 +531,20 @@ def train(FLAGS):
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
+    # Reload from latest checkpoint
+    if FLAGS.reload:
+        load_latest_checkpoint(saveto_prefix=os.path.join(FLAGS.saveto, FLAGS.model_name),
+                               model=nmt_model,
+                               optim=optim,
+                               lr_scheduler=scheduler,
+                               collections=model_collections)
+
     # ================================================================================== #
     # Prepare training
 
-    params_best_loss = None
+    eidx = model_collections.get_collection("eidx", [0])[-1]
+    uidx = model_collections.get_collection("uidx", [0])[-1]
+    bad_count = model_collections.get_collection("bad_count", [0])[-1]
 
     summary_writer = SummaryWriter(log_dir=FLAGS.log_path)
 
@@ -489,7 +559,8 @@ def train(FLAGS):
 
     INFO('Begin training...')
 
-    for eidx in range(training_configs['max_epochs']):
+    while True:
+
         summary_writer.add_scalar("Epoch", (eidx + 1), uidx)
 
         # Build iterator and progress bar
@@ -502,7 +573,9 @@ def train(FLAGS):
 
             uidx += 1
 
-            if optimizer_configs["schedule_method"] == "loss":
+            if scheduler is None:
+                pass
+            elif optimizer_configs["schedule_method"] == "loss":
                 scheduler.step(metric=best_valid_loss)
             else:
                 scheduler.step(global_step=uidx)
@@ -534,7 +607,6 @@ def train(FLAGS):
             # ================================================================================== #
             # Display some information
             if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['disp_freq']):
-
                 # words per second and sents per second
                 words_per_sec = cum_words / (timer.toc(return_seconds=True))
                 sents_per_sec = cum_samples / (timer.toc(return_seconds=True))
@@ -552,32 +624,17 @@ def train(FLAGS):
             # ================================================================================== #
             # Saving checkpoints
             if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['save_freq'], debug=FLAGS.debug):
+                model_collections.add_to_collection("uidx", uidx)
+                model_collections.add_to_collection("eidx", eidx)
+                model_collections.add_to_collection("bad_count", bad_count)
 
-                if not os.path.exists(FLAGS.saveto):
-                    os.mkdir(FLAGS.saveto)
-
-                INFO('Saving the model at iteration {}...'.format(uidx))
-
-                if not os.path.exists(FLAGS.saveto):
-                    os.mkdir(FLAGS.saveto)
-
-                saveto_uidx = os.path.join(FLAGS.saveto, FLAGS.model_name + '.iter%d.tpz' % uidx)
-                torch.save(nmt_model.state_dict(), saveto_uidx)
-
-                Collections.pickle(path=saveto_collections,
-                                   uidx=uidx,
-                                   bad_count=bad_count,
-                                   **model_collections.export())
-
-                saving_files.append(saveto_uidx)
-
-                INFO('Done')
-
-                if len(saving_files) > 5:
-                    for f in saving_files[:-1]:
-                        os.remove(f)
-
-                    saving_files = [saving_files[-1]]
+                save_checkpoint(saveto_prefix=os.path.join(FLAGS.saveto, FLAGS.model_name),
+                                global_step=uidx,
+                                model=nmt_model,
+                                optim=optim,
+                                lr_scheduler=scheduler,
+                                collections=model_collections,
+                                max_keeps=training_configs["num_kept_checkpoints"])
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
@@ -632,12 +689,6 @@ def train(FLAGS):
                         # save model
                         best_params = nmt_model.state_dict()
                         torch.save(best_params, saveto_best_model)
-
-                        # save optim params
-                        INFO('Saving best optimizer params...')
-                        best_optim_params = optim.optim.state_dict()
-                        torch.save(best_optim_params, saveto_best_optim_params)
-
                         INFO('Done.')
 
                 else:
@@ -655,6 +706,10 @@ def train(FLAGS):
                 ))
 
         training_progress_bar.close()
+
+        eidx += 1
+        if eidx > training_configs["max_epochs"]:
+            break
 
 
 def translate(FLAGS):

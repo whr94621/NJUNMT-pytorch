@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from src.utils.common_utils import Vocab
 from src.modules.basic import BottleLinear as Linear
 from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.modules.embeddings import Embeddings
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
 from src.utils import nest
+from src.data.vocabulary import PAD, BOS, EOS
 
 
 def get_attn_causal_mask(seq):
@@ -70,7 +70,7 @@ class Encoder(nn.Module):
 
         emb = self.embeddings(src_seq)
 
-        enc_mask = src_seq.detach().eq(Vocab.PAD)
+        enc_mask = src_seq.detach().eq(PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
 
         out = emb
@@ -168,7 +168,7 @@ class Decoder(nn.Module):
             query_len = 1
 
         # Decode mask
-        dec_slf_attn_pad_mask = tgt_seq.detach().eq(Vocab.PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
+        dec_slf_attn_pad_mask = tgt_seq.detach().eq(PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
         dec_slf_attn_sub_mask = get_attn_causal_mask(emb)
 
         dec_slf_attn_mask = torch.gt(dec_slf_attn_pad_mask + dec_slf_attn_sub_mask, 0)
@@ -246,10 +246,10 @@ class Transformer(nn.Module):
             self.generator = Generator(n_words=n_tgt_vocab,
                                        hidden_size=d_word_vec,
                                        shared_weight=self.decoder.embeddings.embeddings.weight,
-                                       padding_idx=Vocab.PAD)
+                                       padding_idx=PAD)
 
         else:
-            self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=Vocab.PAD)
+            self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
 
     def forward(self, src_seq, tgt_seq=None, mode="train", **kwargs):
 
@@ -279,7 +279,7 @@ class Transformer(nn.Module):
         enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0)
         enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0)
 
-        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(Vocab.BOS)  # Word indices in the beam
+        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(BOS)  # Word indices in the beam
         final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0)  # length of the sentence
         beam_mask = enc_output.new(batch_size, beam_size).fill_(1.0)  # Mask of beams
         beam_scores = enc_output.new(batch_size, beam_size).fill_(0.0)  # Accumulated scores of the beam
@@ -344,15 +344,12 @@ class Transformer(nn.Module):
                 self_attn_caches)
 
             # If next_word_ids is EOS, beam_mask_ should be 0.0
-            beam_mask_ = 1.0 - next_word_ids.eq(Vocab.EOS).float()
+            beam_mask_ = 1.0 - next_word_ids.eq(EOS).float()
             next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0),
-                                       Vocab.PAD)  # If last step a EOS is already generated, we replace the last token as PAD
+                                       PAD)  # If last step a EOS is already generated, we replace the last token as PAD
             beam_mask = beam_mask * beam_mask_
 
             # # If an EOS or PAD is encountered, set the beam mask to 0.0
-            # beam_mask_ = next_word_ids.gt(Vocab.EOS).float()
-            # beam_mask = beam_mask * beam_mask_
-
             final_lengths += beam_mask
 
             final_word_indices = torch.cat((final_word_indices, next_word_ids.unsqueeze(2)), dim=2)

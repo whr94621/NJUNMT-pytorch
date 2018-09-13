@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.utils.common_utils import Vocab
 import src.utils.init as my_init
 from src.modules.embeddings import Embeddings
 from src.modules.cgru import CGRUCell
 from src.modules.rnn import RNN
 from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
+from src.data.vocabulary import PAD, EOS, BOS
 
 
 class Encoder(nn.Module):
@@ -32,7 +32,7 @@ class Encoder(nn.Module):
         :param x: Input sequence.
             with shape [batch_size, seq_len, input_size]
         """
-        x_mask = x.detach().eq(Vocab.PAD)
+        x_mask = x.detach().eq(PAD)
 
         emb = self.embedding(x)
 
@@ -178,9 +178,9 @@ class DL4MT(nn.Module):
                                dropout_rate=dropout, bridge_type=bridge_type)
 
         if proj_share_weight is False:
-            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=Vocab.PAD)
+            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
         else:
-            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=Vocab.PAD,
+            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
                                   shared_weight=self.decoder.embedding.embeddings.weight
                                   )
         self.generator = generator
@@ -217,7 +217,7 @@ class DL4MT(nn.Module):
         beam_mask = ctx_mask.new(batch_size, beam_size).fill_(1).float()
         dec_memory_len = ctx_mask.new(batch_size, beam_size).zero_().float()
         beam_scores = ctx_mask.new(batch_size, beam_size).zero_().float()
-        final_word_indices = x.new(batch_size, beam_size, 1).fill_(Vocab.BOS)
+        final_word_indices = x.new(batch_size, beam_size, 1).fill_(BOS)
 
         for t in range(max_steps):
 
@@ -274,9 +274,9 @@ class DL4MT(nn.Module):
                                                       gather_shape=[batch_size * beam_size, -1])
 
             # If next_word_ids is EOS, beam_mask_ should be 0.0
-            beam_mask_ = 1.0 - next_word_ids.eq(Vocab.EOS).float()
+            beam_mask_ = 1.0 - next_word_ids.eq(EOS).float()
             next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0),
-                                       Vocab.PAD)  # If last step a EOS is already generated, we replace the last token as PAD
+                                       PAD)  # If last step a EOS is already generated, we replace the last token as PAD
             beam_mask = beam_mask * beam_mask_
 
             # update beam

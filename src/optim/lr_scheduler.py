@@ -36,8 +36,10 @@ class LearningRateScheduler(object):
 
     def state_dict(self):
         state = OrderedDict()
-        for name, value in self._state:
+        for name, value in self._state.items():
             state[name] = value
+
+        return state
 
     def load_state_dict(self, state_dict, strict=True):
 
@@ -59,7 +61,6 @@ class NoamScheduler(LearningRateScheduler):
         self.warmup_steps = warmup_steps
 
     def update_lr(self, old_lr, global_step, **kwargs):
-
         t = global_step + 1
         opt_corr = 0.002
 

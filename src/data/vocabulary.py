@@ -85,3 +85,8 @@ class Vocabulary(object):
         tokens = [self.id2token(ii) for ii in indices]
 
         return self.tokenizer.detokenize(tokens)
+
+PAD = Vocabulary.PAD
+EOS = Vocabulary.EOS
+BOS = Vocabulary.BOS
+UNK = Vocabulary.UNK

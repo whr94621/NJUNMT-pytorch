@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from src.utils import Vocab
+from src.data.vocabulary import PAD
 
 
 class Criterion(nn.Module):
@@ -48,7 +48,7 @@ class NMTCriterion(Criterion):
     is supported.
     """
 
-    def __init__(self, padding_idx=Vocab.PAD, label_smoothing=0.0):
+    def __init__(self, padding_idx=PAD, label_smoothing=0.0):
 
         super().__init__()
 
