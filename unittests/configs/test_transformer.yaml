@@ -57,8 +57,7 @@ training_configs:
   bleu_valid_max_steps: 10
   bleu_valid_warmup: 10000
   bleu_valid_configs:
-    bleu_script: "multi-bleu"
-    lowercase: true
+    sacrebleu_args: "--tokenize none -lc"
     postprocess: false
   disp_freq: 100
   save_freq: 1000

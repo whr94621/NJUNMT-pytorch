@@ -1,26 +1,23 @@
 import os
 import subprocess
+from subprocess import DEVNULL
 
 __all__ = [
-    'ExternalScriptBLEUScorer'
+    'SacreBLEUScorer'
 ]
 
 DETRUECASE_PL = os.path.join(os.path.dirname(__file__), "scripts/recaser/detruecase.perl")
 DETOKENIZE_PL = os.path.join(os.path.dirname(__file__), "scripts/tokenizer/detokenizer.perl")
-MULTI_BLEU_PL = os.path.join(os.path.dirname(__file__), "scripts/generic/multi-bleu.perl")
-MULTI_BLEU_DETOK_PL = os.path.join(os.path.dirname(__file__), "scripts/generic/multi-bleu-detok.perl")
 ZH_TOKENIZER_PY = os.path.join(os.path.dirname(__file__), "scripts/tokenizer/tokenizeChinese.py")
 
-class ExternalScriptBLEUScorer(object):
+
+class SacreBLEUScorer(object):
     """Evaluate translation using external scripts.
 
     Scripts are mainly from moses for post-processing and BLEU computation
     """
-    _SCRIPTS = {"multi-bleu": MULTI_BLEU_PL,
-                "multi-bleu-detok": MULTI_BLEU_DETOK_PL}
 
-
-    def __init__(self, reference_path, lang, bleu_script, digits_only=True, lc=False, postprocess=True):
+    def __init__(self, reference_path, lang_pair, sacrebleu_args=None, postprocess=False, num_refs=1):
         """Initialize Scorer
 
         Args:
@@ -38,69 +35,51 @@ class ExternalScriptBLEUScorer(object):
 
             postprocess: Whether do post-processing.
         """
+
+        self.lang_pair = lang_pair.lower()
         self.reference_path = reference_path
-        self.lang = lang.lower()
+        self.num_refs = num_refs
 
-        if bleu_script not in self._SCRIPTS:
-            raise ValueError
+        if sacrebleu_args is None:
+            self.sacrebleu_args = []
+        else:
+            self.sacrebleu_args = sacrebleu_args.strip().split()
 
-        self.script = bleu_script
-        self.digits_only = digits_only
-        self.lc = lc
+        if num_refs == 1:
+            self.references = [self.reference_path,]
+        else:
+            self.references = ["{0}{1}".format(self.reference_path, ii) for ii in range(self.num_refs)]
+
+        self.src_lang, self.tgt_lang = self.lang_pair.split("-")[1]
         self.postprocess = postprocess
+
 
     def _postprocess_cmd(self, stdin):
 
-        # For non-chinese language, we do two-step post-processing
-        #   1. detruecase using 'detruecase.perl'
-        #   2. detokenize using 'detokenizer.perl'
-        if self.lang != "zh":
-            cmd_truecase = subprocess.Popen(["perl", DETRUECASE_PL], stdin=stdin, stdout=subprocess.PIPE)
-            cmd_postprocess = subprocess.Popen(["perl", DETOKENIZE_PL, "-q", "-u", "-l", self.lang],
-                                              stdin=cmd_truecase.stdout,
-                                              stdout=subprocess.PIPE)
-        else:
-            # For chinese, we first remove all the space.
-            # Then, we use external scripts to split into chinese characters except those non-chinese words.
-
-            cmd_rm_space = subprocess.Popen(["sed","s/ //g"], stdin=stdin, stdout=subprocess.PIPE)
-            cmd_postprocess = subprocess.Popen(["python", ZH_TOKENIZER_PY, "-p"], stdin=cmd_rm_space.stdout,
-                                               stdout=subprocess.PIPE)
-
+        cmd_detrucase = subprocess.Popen(["perl", DETRUECASE_PL], stdin=stdin, stdout=subprocess.PIPE, stderr=DEVNULL)
+        cmd_postprocess = subprocess.Popen(["perl", DETOKENIZE_PL, "-q", "-l", self.tgt_lang],
+                                           stdin=cmd_detrucase.stdout, stdout=subprocess.PIPE, stderr=DEVNULL)
         return cmd_postprocess
 
     def _compute_bleu(self, stdin):
 
-        cmd_bleu_str = ["perl",]
+        cmd_bleu = subprocess.Popen(["sacrebleu", "-l", self.lang_pair] + self.sacrebleu_args + ["--score-only",] + self.references,
+                                    stdin=stdin,
+                                    stdout=subprocess.PIPE
+                                    )
 
-        cmd_bleu_str.append(self._SCRIPTS[self.script])
+        bleu = float(cmd_bleu.communicate()[0].decode("utf-8").strip())
 
-        # Whether convert reference into lower case
-        if self.lc:
-            cmd_bleu_str.append("-lc")
-
-        cmd_bleu_str.append(self.reference_path)
-
-        cmd_bleu = subprocess.Popen(cmd_bleu_str, stdin=stdin, stdout=subprocess.PIPE)
-
-        cmd_out = cmd_bleu.communicate()[0]
-
-        return cmd_out
+        return bleu
 
     def corpus_bleu(self, hyp_in):
 
-        cmd_bpe = subprocess.Popen(["sed", "s/@@ //g"], stdin=hyp_in, stdout=subprocess.PIPE)
-
         if self.postprocess:
-            cmd_postprocess = self._postprocess_cmd(stdin=cmd_bpe.stdout)
+            cmd_postprocess = self._postprocess_cmd(stdin=hyp_in)
+            inp = cmd_postprocess.stdout
         else:
-            cmd_postprocess = cmd_bpe
+            inp = hyp_in
 
-        out = self._compute_bleu(stdin=cmd_postprocess.stdout).decode("utf-8").strip().split("\n")
-        out = [line for line in out if line.startswith("BLEU")][0]
+        bleu = self._compute_bleu(stdin=inp)
 
-        if self.digits_only:
-            out = out.split(',')[0].split("=")[-1].strip()
-            out = float(out)
-
-        return out
+        return bleu

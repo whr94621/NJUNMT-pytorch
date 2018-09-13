@@ -45,13 +45,14 @@ training_configs:
   batching_key: "samples"
   batch_size: 50
   update_cycle: 1
-  valid_batch_size: 50
+  valid_batch_size: 20
   bleu_valid_batch_size: 10
-  bleu_valid_warmup: 10000 # Start to do BLEU validation after those steps
+  bleu_valid_max_steps: 150
+  bleu_valid_warmup: 1 # Start to do BLEU validation after those steps
   bleu_valid_configs:
-    bleu_script: "multi-bleu"
-    lowercase: true
+    sacrebleu_args: "--tokenize none -lc"
     postprocess: false
+  num_kept_checkpoints: 1
   disp_freq: 100 # Frequency to print information
   save_freq: 1000 # Frequency to save the model
   loss_valid_freq: &decay_freq 100
