@@ -26,6 +26,7 @@ BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
 PAD = Vocabulary.PAD
 
+
 def split_shard(*inputs, split_size=1):
     if split_size <= 1:
         yield inputs
@@ -188,7 +189,6 @@ def bleu_validation(uidx,
                     valid_dir="./valid",
                     max_steps=10
                     ):
-
     model.eval()
 
     trans = []
@@ -533,12 +533,16 @@ def train(FLAGS):
 
             # ================================================================================== #
             # Display some information
-            if np.mod(uidx, training_configs['disp_freq']) == 0:
+            if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['disp_freq']):
+
                 # words per second and sents per second
                 words_per_sec = cum_words / (timer.toc(return_seconds=True))
                 sents_per_sec = cum_samples / (timer.toc(return_seconds=True))
+                lrate = list(optim.get_lrate())[0]
+
                 summary_writer.add_scalar("Speed(words/sec)", scalar_value=words_per_sec, global_step=uidx)
                 summary_writer.add_scalar("Speed(sents/sen)", scalar_value=sents_per_sec, global_step=uidx)
+                summary_writer.add_scalar("lrate", scalar_value=lrate, global_step=uidx)
 
                 # Reset timer
                 timer.tic()
@@ -547,7 +551,7 @@ def train(FLAGS):
 
             # ================================================================================== #
             # Saving checkpoints
-            if np.mod(uidx, training_configs['save_freq']) == 0 or FLAGS.debug:
+            if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['save_freq'], debug=FLAGS.debug):
 
                 if not os.path.exists(FLAGS.saveto):
                     os.mkdir(FLAGS.saveto)
@@ -577,8 +581,8 @@ def train(FLAGS):
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
-            if np.mod(uidx, training_configs['loss_valid_freq']) == 0 or FLAGS.debug:
-
+            if should_trigger_by_steps(global_step=uidx, n_epoch=eidx, every_n_step=training_configs['loss_valid_freq'],
+                                       debug=FLAGS.debug):
                 valid_loss = loss_validation(model=nmt_model,
                                              critic=critic,
                                              valid_iterator=valid_iterator,
@@ -596,8 +600,10 @@ def train(FLAGS):
             # ================================================================================== #
             # BLEU Validation & Early Stop
 
-            if (np.mod(uidx, training_configs['bleu_valid_freq']) == 0 and uidx > training_configs['bleu_valid_warmup']) \
-                    or FLAGS.debug:
+            if should_trigger_by_steps(global_step=uidx, n_epoch=eidx,
+                                       every_n_step=training_configs['bleu_valid_freq'],
+                                       min_step=training_configs['bleu_valid_warmup'],
+                                       debug=FLAGS.debug):
 
                 valid_bleu = bleu_validation(uidx=uidx,
                                              valid_iterator=valid_iterator,
@@ -644,10 +650,9 @@ def train(FLAGS):
 
                 summary_writer.add_scalar("bad_count", bad_count, uidx)
 
-                with open("./valid.txt", 'a') as f:
-                    f.write("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}\n".format(uidx, valid_loss,
-                                                                                                   valid_bleu, lrate,
-                                                                                                   bad_count))
+                INFO("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}".format(
+                    uidx, valid_loss, valid_bleu, lrate, bad_count
+                ))
 
         training_progress_bar.close()
 
