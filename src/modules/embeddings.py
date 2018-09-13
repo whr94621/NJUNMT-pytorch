@@ -1,9 +1,8 @@
 import math
 import torch
 import torch.nn as nn
-
-from src.utils import Vocab
 import src.utils.init as my_init
+from src.data.vocabulary import PAD
 
 
 class Embeddings(nn.Module):
@@ -13,7 +12,7 @@ class Embeddings(nn.Module):
                  embedding_dim,
                  dropout=0.0,
                  add_position_embedding=True,
-                 padding_idx=Vocab.PAD):
+                 padding_idx=PAD):
 
         super().__init__()
 

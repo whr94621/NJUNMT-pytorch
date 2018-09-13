@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 
-from .common_utils import GlobalNames, Vocab
+from src.data.vocabulary import EOS, PAD
+from .common_utils import GlobalNames
 
 __all__ = [
     'tile_batch',
@@ -178,7 +179,7 @@ def mask_scores(scores, beam_mask):
     finished_row = beam_mask.new(vocab_size, ).zero_() + float(_FLOAT32_INF)
 
     # If beam finished, only PAD could be generated afterwards.
-    finished_row[Vocab.EOS] = 0.0
+    finished_row[EOS] = 0.0
 
     scores = scores * beam_mask.unsqueeze(2) + \
              torch.matmul((1.0 - beam_mask).unsqueeze(2), finished_row.unsqueeze(0))
@@ -212,7 +213,7 @@ def reranking_beams(word_ids, scores):
 
     # Reranking beams
     reranked_beams = np.argsort(scores, axis=1)
-    reranked_word_ids = np.ones_like(word_ids) * Vocab.PAD
+    reranked_word_ids = np.ones_like(word_ids) * PAD
 
     for b in range(scores.shape[0]):
         for ii in reranked_beams[b]:
