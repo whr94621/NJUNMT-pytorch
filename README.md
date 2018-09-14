@@ -19,6 +19,7 @@ mechanism. Our implementation is different from the official [tensor2tenosr](htt
 - pytorch 0.4.0
 - tqdm
 - tensorboardX
+- sacrebleu
 
 # Usage
 
