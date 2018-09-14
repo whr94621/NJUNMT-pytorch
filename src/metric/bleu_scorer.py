@@ -68,7 +68,14 @@ class SacreBLEUScorer(object):
                                     stdout=subprocess.PIPE
                                     )
 
-        bleu = float(cmd_bleu.communicate()[0].decode("utf-8").strip())
+        bleu = cmd_bleu.communicate()[0].decode("utf-8").strip()
+
+        try:
+            bleu = float(bleu)
+        except:
+            print(type(bleu))
+            print(bleu)
+            exit(1)
 
         return bleu
 

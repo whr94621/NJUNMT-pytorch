@@ -139,7 +139,7 @@ class Optimizer(object):
 
     def state_dict(self):
 
-        self.optim.state_dict()
+        return self.optim.state_dict()
 
     def load_state_dict(self, state_dict):
 
