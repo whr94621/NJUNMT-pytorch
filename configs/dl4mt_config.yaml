@@ -25,7 +25,7 @@ model_configs:
   d_word_vec: 512
   d_model: 1024
   dropout: 0.5
-  proj_share_weight: false
+  proj_share_weight: true
 
 optimizer_configs:
   optimizer: "adam"
