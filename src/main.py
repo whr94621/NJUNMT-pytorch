@@ -96,16 +96,11 @@ def load_latest_checkpoint(saveto_prefix,
 
     ckpt_state_dict = torch.load(latest_ckpt_path)
 
-    uidx = ckpt_state_dict['uidx']
-    eidx = ckpt_state_dict['eidx']
-
     model.load_state_dict(ckpt_state_dict['model'])
     optim.load_state_dict(ckpt_state_dict['optim'])
     if lr_scheduler is not None:
         lr_scheduler.load_state_dict(ckpt_state_dict['lr_scheduler'])
     collections.load_state_dict(ckpt_state_dict['collections'])
-
-    return uidx, eidx
 
 
 def split_shard(*inputs, split_size=1):
