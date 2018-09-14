@@ -7,13 +7,13 @@ data_configs:
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/zh.0"
     - "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en.0"
   bleu_valid_reference: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/test/MT03/en."
-vocabularies:
-  - type: "word"
-    dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
-    max_n_words: 30000
-  - type: "word"
-    dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
-    max_n_words: 30000
+  vocabularies:
+    - type: "word"
+      dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.zh.json"
+      max_n_words: 30000
+    - type: "word"
+      dict_path: "/home/user_data/weihr/NMT_DATA_PY3/1.34M/dict/dict.en.json"
+      max_n_words: 30000
   max_len:
     - -1
     - -1
@@ -28,26 +28,29 @@ model_configs:
   d_model: *dim
   d_inner_hid: 2048
   dropout: 0.1
-  proj_share_weight: false
+  proj_share_weight: true
   label_smoothing: 0.1
 
 optimizer_configs:
   optimizer: "adam"
-  learning_rate: 0.1
+  learning_rate: 0.2
   grad_clip: -1.0
-  optimizer_params: ~
+  optimizer_params:
+    betas:
+      - 0.9
+      - 0.98
   schedule_method: noam
   scheduler_configs:
     d_model: *dim
-    warmup_steps: 4000
+    warmup_steps: 8000
 
 training_configs:
   max_epochs: 1000000
   shuffle: true
   use_bucket: true
   batching_key: "tokens"
-  batch_size: 4096
-  update_cycle: 1
+  batch_size: 1024
+  update_cycle: 4
   valid_batch_size: 20
   bleu_valid_batch_size: 10
   bleu_valid_max_steps: 150
@@ -58,6 +61,6 @@ training_configs:
   num_kept_checkpoints: 1
   disp_freq: 100 # Frequency to print information
   save_freq: 1000 # Frequency to save the model
-  loss_valid_freq: &decay_freq 100
+  loss_valid_freq: 1000
   bleu_valid_freq: 1000
   early_stop_patience: 20
