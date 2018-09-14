@@ -1,0 +1,5 @@
+torch==0.4.0
+pyyaml
+tensorboardX
+tqdm
+sacrebleu
