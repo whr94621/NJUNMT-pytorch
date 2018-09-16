@@ -1,8 +1,9 @@
-from .dataset import Record
-import numpy as np
 import random
 
+import numpy as np
+
 from src.utils.common_utils import GlobalNames
+from .dataset import Record
 
 __all__ = [
     'DataIterator'
@@ -48,53 +49,68 @@ class Batch(object):
         return cls(*records)
 
 
-def batchify(buffer, batch_size, batching_func):
-    """
-    Batchify buffer, a list of records, given a ```batching_func``` and ```batch_size```.
-    """
+def batching(records, batch_size, batching_key):
     batches = []
+    batch_buffer = []
 
-    for records in accumulate_takewhile(buffer, batch_size, batching_func):
-        batches.append(Batch.pack(*records))
+    num_samples = 0
+
+    if batching_key == "samples":
+        for record in records:
+            batch_buffer.append(record)
+            num_samples += 1
+
+            if num_samples >= batch_size:
+                batches.append(Batch.pack(*batch_buffer))
+
+                num_samples = 0
+                batch_buffer = []
+    else:
+        max_len = 0
+        for record in records:
+            batch_buffer.append(record)
+
+            num_samples += 1
+            max_len = max(max_len, record.index)
+
+            if max_len * num_samples >= batch_size:
+                batches.append(Batch.pack(*batch_buffer))
+
+                num_samples = 0
+                max_len = 0
+                batch_buffer = []
+
+    if len(batch_buffer) > 0:
+        batches.append(Batch.pack(*batch_buffer))
 
     return batches
 
 
-class accumulate_takewhile(object):
-    """
-    This is the combination of ```itertools.takewhile``` and ```itertools.accumulate```
-    >>> my_iter = accumulate_takewhile(range(10), 3)
-    >>> list(my_iter) # [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
-    """
+def fill_buffer(data_iter, stop, key):
+    records = []
 
-    def __init__(self, iterable, stop, func=lambda item: 1):
+    n_samples = 0
+    key_values = 0
 
-        self.iter = iter(iterable)
-        self.func = func
-        self.size = stop
+    while True:
+        try:
+            record = next(data_iter)
+        except StopIteration:
+            break
 
-    def __iter__(self):
-        return self
+        records.append(record)
 
-    def __next__(self):
+        n_samples += 1
+        key_values += record.index
 
-        out = []
-        count = 0
+        if key == "samples":
+            if n_samples >= stop:
+                break
+        else:
+            if key_values >= stop:
+                break
 
-        while True:
-            try:
-                item = next(self.iter)
-            except StopIteration:
-                if len(out) > 0:
-                    return out
-                else:
-                    raise StopIteration
-
-            out.append(item)
-            count += self.func(item)
-
-            if count >= self.size:
-                return out
+    return records
 
 
 def accumulate_slicewhilce(data_iter, stop, key_func=lambda _: 1):
@@ -169,13 +185,9 @@ class DataIterator(object):
         # For samples, we allocate a batch according to the number of samples in it. In machine
         # translation, 50 batch size with "samples" as key means 50 bi-text sentences.
 
-        if batching_func == "samples":
-            self.batching_func = lambda line: 1
-        elif batching_func == "tokens":
-            self.batching_func = lambda record: record.index
-        else:
-            assert callable(batching_func)
-            self.batching_func = batching_func
+        if batching_func not in {"samples", "tokens"}:
+            raise ValueError("Unknown batching key {0}".format(batching_func))
+        self._batching_key = batching_func
 
         # buffer size for bucketing
         # buffer size is the max number of batches in a buffer
@@ -205,7 +217,7 @@ class DataIterator(object):
             batch_size = self.batch_size
 
         # 1. Allocate a new buffer
-        inc_buffer = accumulate_slicewhilce(self.data_iter, self._buffer_size, key_func=self.batching_func)
+        inc_buffer = fill_buffer(self.data_iter, stop=self._buffer_size, key=self._batching_key)
 
         if len(inc_buffer) <= 0:
             # data_iter reach the end of the dataset
@@ -228,7 +240,7 @@ class DataIterator(object):
             sorted_indices = np.argsort(noisy_scores).tolist()
             new_buffer = [new_buffer[i] for i in sorted_indices]
 
-        new_batch_buffer = batchify(new_buffer, batch_size=batch_size, batching_func=self.batching_func)
+        new_batch_buffer = batching(new_buffer, batch_size=batch_size, batching_key=self._batching_key)
         del new_buffer  # release memory
 
         self.buffer = new_batch_buffer

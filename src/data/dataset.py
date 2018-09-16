@@ -1,8 +1,8 @@
-from typing import Union
 import collections
+import os
 import random
 import tempfile
-import os
+from typing import Union
 
 from src.utils.logging import INFO
 from .vocabulary import Vocabulary
@@ -174,10 +174,6 @@ class TextLineDataset(Dataset):
     def data_path(self):
         return self._data_path
 
-    @property
-    def n_fields(self):
-        return 1
-
     def __len__(self):
         return self.num_lines
 
@@ -212,10 +208,6 @@ class ZipDataset(Dataset):
     @property
     def data_path(self):
         return [ds.data_path for ds in self.datasets]
-
-    @property
-    def n_fields(self):
-        return len(self.datasets)
 
     def __len__(self):
         return len(self.datasets[0])
