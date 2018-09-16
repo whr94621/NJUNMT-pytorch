@@ -584,11 +584,13 @@ def train(FLAGS):
 
             training_progress_bar.update(n_samples_t)
 
+            optim.zero_grad()
+
             # Prepare data
             for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
                 x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
 
-                nmt_model.zero_grad()
+
                 loss = compute_forward(model=nmt_model,
                                        critic=critic,
                                        seqs_x=x,
