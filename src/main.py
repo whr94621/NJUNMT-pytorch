@@ -1,21 +1,23 @@
-import time
 import os
+import time
+
+import numpy as np
+import torch
 import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
-import torch
-import numpy as np
-from src.data.vocabulary import Vocabulary
-from src.data.dataset import TextLineDataset, ZipDataset
 from src.data.data_iterator import DataIterator
-from src.utils.common_utils import *
-from src.utils.logging import *
+from src.data.dataset import TextLineDataset, ZipDataset
+from src.data.vocabulary import Vocabulary
+from src.decoding import beam_search, ensemble_beam_search
 from src.metric.bleu_scorer import SacreBLEUScorer
 from src.models import build_model
 from src.modules.criterions import NMTCriterion
 from src.optim import Optimizer
 from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
+from src.utils.common_utils import *
+from src.utils.logging import *
 
 # Fix random seed
 torch.manual_seed(GlobalNames.SEED)
@@ -25,6 +27,14 @@ if torch.cuda.is_available():
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
 PAD = Vocabulary.PAD
+
+
+def load_model_parameters(path, map_location="cpu"):
+    state_dict = torch.load(path, map_location=map_location)
+
+    if "collections" in state_dict:
+        return state_dict["model"]
+    return state_dict
 
 
 def save_checkpoint(saveto_prefix,
@@ -263,7 +273,8 @@ def bleu_validation(uidx,
                     vocab_tgt,
                     batch_size,
                     valid_dir="./valid",
-                    max_steps=10
+                    max_steps=10,
+                    beam_size=5
                     ):
     model.eval()
 
@@ -282,7 +293,10 @@ def bleu_validation(uidx,
 
         x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
 
-        word_ids = model(x, mode="infer", beam_size=5, max_steps=max_steps)
+        with torch.no_grad():
+            word_ids = beam_search(nmt_model=model, beam_size=5, max_steps=max_steps, src_seqs=x)
+
+        # word_ids = model(x, mode="infer", beam_size=5, max_steps=max_steps)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
@@ -362,6 +376,8 @@ def default_configs(configs):
     configs["training_configs"].setdefault("buffer_size", 20 * configs["training_configs"]["batch_size"])
 
     configs["training_configs"].setdefault("update_cycle", 1)
+
+    configs["training_configs"].setdefault("bleu_valid_beam_size", 5)
 
     configs["training_configs"].setdefault("bleu_valid_max_steps", 150)
 
@@ -590,7 +606,6 @@ def train(FLAGS):
             for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
                 x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
 
-
                 loss = compute_forward(model=nmt_model,
                                        critic=critic,
                                        seqs_x=x,
@@ -665,7 +680,8 @@ def train(FLAGS):
                                              bleu_scorer=bleu_scorer,
                                              vocab_tgt=vocab_tgt,
                                              valid_dir=FLAGS.valid_path,
-                                             max_steps=training_configs["bleu_valid_max_steps"]
+                                             max_steps=training_configs["bleu_valid_max_steps"],
+                                             beam_size=training_configs["bleu_valid_beam_size"]
                                              )
 
                 model_collections.add_to_collection(key="history_bleus", value=valid_bleu)
@@ -751,7 +767,7 @@ def translate(FLAGS):
     INFO('Reloading model parameters...')
     timer.tic()
 
-    params = torch.load(FLAGS.model_path, map_location="cpu")
+    params = load_model_parameters(FLAGS.model_path, map_location="cpu")
 
     nmt_model.load_state_dict(params)
 
@@ -780,7 +796,133 @@ def translate(FLAGS):
 
         x = prepare_data(seqs_x=seqs_x, cuda=GlobalNames.USE_GPU)
 
-        word_ids = nmt_model(x, mode="infer", beam_size=5, max_steps=FLAGS.max_steps)
+        with torch.no_grad():
+            word_ids = beam_search(nmt_model=nmt_model, beam_size=FLAGS.beam_size, max_steps=FLAGS.max_steps,
+                                   src_seqs=x)
+
+        word_ids = word_ids.cpu().numpy().tolist()
+
+        # Append result
+        for sent_t in word_ids:
+            sent_t = [[wid for wid in line if wid != PAD] for line in sent_t]
+            result.append(sent_t)
+
+            n_words += len(sent_t[0])
+
+        infer_progress_bar.update(batch_size_t)
+
+    infer_progress_bar.close()
+
+    INFO('Done. Speed: {0:.2f} words/sec'.format(n_words / (timer.toc(return_seconds=True))))
+
+    translation = []
+    for sent in result:
+        samples = []
+        for trans in sent:
+            sample = []
+            for w in trans:
+                if w == vocab_tgt.EOS:
+                    break
+                sample.append(vocab_tgt.id2token(w))
+            samples.append(vocab_tgt.tokenizer.detokenize(sample))
+        translation.append(samples)
+
+    keep_n = FLAGS.beam_size if FLAGS.keep_n <= 0 else min(FLAGS.beam_size, FLAGS.keep_n)
+    outputs = ['%s.%d' % (FLAGS.saveto, i) for i in range(keep_n)]
+
+    with batch_open(outputs, 'w') as handles:
+        for trans in translation:
+            for i in range(keep_n):
+                if i < len(trans):
+                    handles[i].write('%s\n' % trans[i])
+                else:
+                    handles[i].write('%s\n' % 'eos')
+
+
+def ensemble_translate(FLAGS):
+    GlobalNames.USE_GPU = FLAGS.use_gpu
+
+    config_path = os.path.abspath(FLAGS.config_path)
+
+    with open(config_path.strip()) as f:
+        configs = yaml.load(f)
+
+    data_configs = configs['data_configs']
+    model_configs = configs['model_configs']
+
+    timer = Timer()
+    # ================================================================================== #
+    # Load Data
+
+    INFO('Loading data...')
+    timer.tic()
+
+    # Generate target dictionary
+    vocab_src = Vocabulary(**data_configs["vocabularies"][0])
+    vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
+
+    valid_dataset = TextLineDataset(data_path=FLAGS.source_path,
+                                    vocabulary=vocab_src)
+
+    valid_iterator = DataIterator(dataset=valid_dataset,
+                                  batch_size=FLAGS.batch_size,
+                                  use_bucket=False)
+
+    INFO('Done. Elapsed time {0}'.format(timer.toc()))
+
+    # ================================================================================== #
+    # Build Model & Sampler & Validation
+    INFO('Building model...')
+    timer.tic()
+
+    nmt_models = []
+
+    model_path = FLAGS.model_path
+
+    for ii in range(len(model_path)):
+
+        nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
+                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+        nmt_model.eval()
+        INFO('Done. Elapsed time {0}'.format(timer.toc()))
+
+        INFO('Reloading model parameters...')
+        timer.tic()
+
+        params = load_model_parameters(model_path[ii], map_location="cpu")
+
+        nmt_model.load_state_dict(params)
+
+        if GlobalNames.USE_GPU:
+            nmt_model.cuda()
+
+        nmt_models.append(nmt_model)
+
+    INFO('Done. Elapsed time {0}'.format(timer.toc()))
+
+    INFO('Begin...')
+
+    result = []
+    n_words = 0
+
+    timer.tic()
+
+    infer_progress_bar = tqdm(total=len(valid_iterator),
+                              desc=' - (Infer)  ',
+                              unit="sents")
+
+    valid_iter = valid_iterator.build_generator()
+    for batch in valid_iter:
+
+        seqs_x = batch
+
+        batch_size_t = len(seqs_x)
+
+        x = prepare_data(seqs_x=seqs_x, cuda=GlobalNames.USE_GPU)
+
+        with torch.no_grad():
+            word_ids = ensemble_beam_search(nmt_models=nmt_models, beam_size=FLAGS.beam_size, max_steps=FLAGS.max_steps,
+                                            src_seqs=x)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
