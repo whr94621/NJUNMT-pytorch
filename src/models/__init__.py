@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .transformer import Transformer
+
 from .dl4mt import DL4MT
+from .transformer import Transformer
 
 __all__ = [
     "build_model",

@@ -52,7 +52,8 @@ training_configs:
   valid_batch_size: 100
   bleu_valid_batch_size: 3
   bleu_valid_max_steps: 10
-  bleu_valid_warmup: 10000
+  bleu_valid_beam_size: 5
+  bleu_valid_warmup: 1
   bleu_valid_configs:
     sacrebleu_args: "--tokenize none -lc"
     postprocess: false

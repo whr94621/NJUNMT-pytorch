@@ -1,12 +1,37 @@
+# MIT License
+
+# Copyright (c) 2018 the NJUNMT-pytorch authors.
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
+import torch.nn.functional as F
+
+from src.data.vocabulary import PAD
+from src.decoding.utils import tile_batch, tensor_gather_helper
 from src.modules.basic import BottleLinear as Linear
-from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.modules.embeddings import Embeddings
-from src.utils.beam_search import tile_batch, tensor_gather_helper, mask_scores
+from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.utils import nest
-from src.data.vocabulary import PAD, BOS, EOS
+from src.utils.beam_search import tile_batch, tensor_gather_helper
 
 
 def get_attn_causal_mask(seq):
@@ -204,16 +229,21 @@ class Generator(nn.Module):
         self.padding_idx = padding_idx
 
         self.proj = Linear(self.hidden_size, self.n_words, bias=False)
-        self.actn = nn.LogSoftmax(dim=-1)
 
         if shared_weight is not None:
             self.proj.linear.weight = shared_weight
 
-    def forward(self, input):
+    def forward(self, input, log_probs=True):
         """
         input == > Linear == > LogSoftmax
         """
-        return self.actn(self.proj(input))
+
+        logits = self.proj(input)
+
+        if log_probs:
+            return F.log_softmax(logits, dim=-1)
+        else:
+            return F.softmax(logits, dim=-1)
 
 
 class Transformer(nn.Module):
@@ -251,118 +281,71 @@ class Transformer(nn.Module):
         else:
             self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
 
-    def forward(self, src_seq, tgt_seq=None, mode="train", **kwargs):
-
-        if mode == "train":
-            assert tgt_seq is not None
-            return self.force_teaching(src_seq, tgt_seq)
-        elif mode == "infer":
-            with torch.no_grad():
-                return self.batch_beam_search(src_seq=src_seq, **kwargs)
-
-    def force_teaching(self, src_seq, tgt_seq):
+    def forward(self, src_seq, tgt_seq, log_probs=True):
 
         enc_output, enc_mask = self.encoder(src_seq)
         dec_output, _, _ = self.decoder(tgt_seq, enc_output, enc_mask)
 
-        return self.generator(dec_output)
+        return self.generator(dec_output, log_probs=log_probs)
 
-    def batch_beam_search(self, src_seq, beam_size=5, max_steps=150):
+    def encode(self, src_seq):
 
-        batch_size = src_seq.size(0)
+        ctx, ctx_mask = self.encoder(src_seq)
 
-        enc_output, enc_mask = self.encoder(src_seq)  # [batch_size, seq_len, dim]
+        return {"ctx": ctx, "ctx_mask": ctx_mask}
 
-        # dec_caches = self.decoder.compute_caches(enc_output)
+    def init_decoder(self, enc_outputs, expand_size=1):
 
-        # Tile beam_size times
-        enc_mask = tile_batch(enc_mask, multiplier=beam_size, batch_dim=0)
-        enc_output = tile_batch(enc_output, multiplier=beam_size, batch_dim=0)
+        ctx = enc_outputs['ctx']
 
-        final_word_indices = src_seq.new(batch_size, beam_size, 1).fill_(BOS)  # Word indices in the beam
-        final_lengths = enc_output.new(batch_size, beam_size).fill_(0.0)  # length of the sentence
-        beam_mask = enc_output.new(batch_size, beam_size).fill_(1.0)  # Mask of beams
-        beam_scores = enc_output.new(batch_size, beam_size).fill_(0.0)  # Accumulated scores of the beam
+        ctx_mask = enc_outputs['ctx_mask']
 
-        self_attn_caches = None  # Every element has shape [batch_size * beam_size, num_heads, seq_len, dim_head]
-        enc_attn_caches = None
+        if expand_size > 1:
+            ctx = tile_batch(ctx, multiplier=expand_size)
+            ctx_mask = tile_batch(ctx_mask, multiplier=expand_size)
 
-        for t in range(max_steps):
+        return {
+            "ctx": ctx,
+            "ctx_mask": ctx_mask,
+            "enc_attn_caches": None,
+            "slf_attn_caches": None
+        }
 
-            inp_t = final_word_indices.view(-1, final_word_indices.size(-1))
+    def decode(self, tgt_seq, dec_states, log_probs=True):
 
-            dec_output, self_attn_caches, enc_attn_caches \
-                = self.decoder(tgt_seq=inp_t,
-                               enc_output=enc_output,
-                               enc_mask=enc_mask,
-                               enc_attn_caches=enc_attn_caches,
-                               self_attn_caches=self_attn_caches)  # [batch_size * beam_size, seq_len, dim]
+        ctx = dec_states["ctx"]
+        ctx_mask = dec_states['ctx_mask']
+        enc_attn_caches = dec_states['enc_attn_caches']
+        slf_attn_caches = dec_states['slf_attn_caches']
 
-            next_scores = - self.generator(dec_output[:, -1].contiguous())  # [batch_size * beam_size, n_words]
-            next_scores = next_scores.view(batch_size, beam_size, -1)
-            next_scores = mask_scores(next_scores, beam_mask=beam_mask)
+        dec_output, slf_attn_caches, enc_attn_caches = self.decoder(tgt_seq=tgt_seq, enc_output=ctx, enc_mask=ctx_mask,
+                                                                    enc_attn_caches=enc_attn_caches,
+                                                                    self_attn_caches=slf_attn_caches)
 
-            beam_scores = next_scores + beam_scores.unsqueeze(2)  # [B, Bm, N] + [B, Bm, 1] ==> [B, Bm, N]
+        next_scores = self.generator(dec_output[:, -1].contiguous(), log_probs=log_probs)
 
-            vocab_size = beam_scores.size(-1)
-            if t == 0:
-                beam_scores = beam_scores[:, 0, :].contiguous()
+        dec_states['enc_attn_caches'] = enc_attn_caches
+        dec_states['slf_attn_caches'] = slf_attn_caches
 
-            beam_scores = beam_scores.view(batch_size, -1)
+        return next_scores, dec_states
 
-            # Get topK with beams【
-            beam_scores, indices = torch.topk(beam_scores, k=beam_size, dim=-1, largest=False, sorted=False)
-            next_beam_ids = torch.div(indices, vocab_size)
-            next_word_ids = indices % vocab_size
+    def reorder_dec_states(self, dec_states, new_beam_indices, beam_size):
 
-            # Re-arrange by new beam indices
-            beam_mask = tensor_gather_helper(gather_indices=next_beam_ids,
-                                             gather_from=beam_mask,
-                                             batch_size=batch_size,
-                                             beam_size=beam_size,
-                                             gather_shape=[-1])
+        slf_attn_caches = dec_states['slf_attn_caches']
 
-            final_word_indices = tensor_gather_helper(gather_indices=next_beam_ids,
-                                                      gather_from=final_word_indices,
-                                                      batch_size=batch_size,
-                                                      beam_size=beam_size,
-                                                      gather_shape=[batch_size * beam_size, -1])
+        batch_size = slf_attn_caches[0][0].size(0) // beam_size
 
-            final_lengths = tensor_gather_helper(gather_indices=next_beam_ids,
-                                                 gather_from=final_lengths,
-                                                 batch_size=batch_size,
-                                                 beam_size=beam_size,
-                                                 gather_shape=[-1])
+        n_head = self.decoder.n_head
+        dim_per_head = self.decoder.dim_per_head
 
-            self_attn_caches = nest.map_structure(
-                lambda t: tensor_gather_helper(gather_indices=next_beam_ids,
-                                               gather_from=t,
-                                               batch_size=batch_size,
-                                               beam_size=beam_size,
-                                               gather_shape=[batch_size * beam_size, self.decoder.n_head,
-                                                             -1, self.decoder.dim_per_head]),
-                self_attn_caches)
+        slf_attn_caches = nest.map_structure(
+            lambda t: tensor_gather_helper(gather_indices=new_beam_indices,
+                                           gather_from=t,
+                                           batch_size=batch_size,
+                                           beam_size=beam_size,
+                                           gather_shape=[batch_size * beam_size, n_head, -1, dim_per_head]),
+            slf_attn_caches)
 
-            # If next_word_ids is EOS, beam_mask_ should be 0.0
-            beam_mask_ = 1.0 - next_word_ids.eq(EOS).float()
-            next_word_ids.masked_fill_((beam_mask_ + beam_mask).eq(0.0),
-                                       PAD)  # If last step a EOS is already generated, we replace the last token as PAD
-            beam_mask = beam_mask * beam_mask_
+        dec_states['slf_attn_caches'] = slf_attn_caches
 
-            # # If an EOS or PAD is encountered, set the beam mask to 0.0
-            final_lengths += beam_mask
-
-            final_word_indices = torch.cat((final_word_indices, next_word_ids.unsqueeze(2)), dim=2)
-
-            if beam_mask.eq(0.0).all():
-                break
-
-        scores = beam_scores / (final_lengths + 1e-2)
-
-        _, reranked_ids = torch.sort(scores, dim=-1, descending=False)
-
-        return tensor_gather_helper(gather_indices=reranked_ids,
-                                    gather_from=final_word_indices[:, :, 1:].contiguous(),
-                                    batch_size=batch_size,
-                                    beam_size=beam_size,
-                                    gather_shape=[batch_size * beam_size, -1])
+        return dec_states
