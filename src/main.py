@@ -1,4 +1,5 @@
 import os
+import random
 import time
 
 import numpy as np
@@ -19,14 +20,22 @@ from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
 from src.utils.common_utils import *
 from src.utils.logging import *
 
-# Fix random seed
-torch.manual_seed(GlobalNames.SEED)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed_all(GlobalNames.SEED)
-
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
 PAD = Vocabulary.PAD
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    random.seed(seed)
+
+    np.random.seed(seed)
+
+    torch.backends.cudnn.deterministic = True
 
 
 def load_model_parameters(path, map_location="cpu"):
@@ -369,7 +378,13 @@ def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None)
 
 
 def default_configs(configs):
+    configs["data_configs"].setdefault("bleu_valid_reference", "")
+
+    configs["data_configs"].setdefault("num_refs", 1)
+
     configs["model_configs"].setdefault("label_smoothing", 0.0)
+
+    configs["training_configs"].setdefault("seed", 1234)
 
     configs["training_configs"].setdefault("norm_by_words", False)
 
@@ -417,9 +432,9 @@ def train(FLAGS):
     optimizer_configs = configs['optimizer_configs']
     training_configs = configs['training_configs']
 
-    if "seed" in training_configs:
-        # Set random seed
-        GlobalNames.SEED = training_configs['seed']
+    GlobalNames.SEED = training_configs['seed']
+
+    set_seed(GlobalNames.SEED)
 
     saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
 
@@ -472,8 +487,7 @@ def train(FLAGS):
     bleu_scorer = SacreBLEUScorer(reference_path=data_configs["bleu_valid_reference"],
                                   num_refs=data_configs["num_refs"],
                                   lang_pair=data_configs["lang_pair"],
-                                  sacrebleu_args=training_configs["bleu_valid_configs"]["sacrebleu_args"],
-                                  postprocess=training_configs["bleu_valid_configs"]["postprocess"]
+                                  **training_configs["bleu_valid_configs"]
                                   )
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
@@ -639,13 +653,14 @@ def train(FLAGS):
                 model_collections.add_to_collection("eidx", eidx)
                 model_collections.add_to_collection("bad_count", bad_count)
 
-                save_checkpoint(saveto_prefix=os.path.join(FLAGS.saveto, FLAGS.model_name),
-                                global_step=uidx,
-                                model=nmt_model,
-                                optim=optim,
-                                lr_scheduler=scheduler,
-                                collections=model_collections,
-                                max_keeps=training_configs["num_kept_checkpoints"])
+                if not is_early_stop:
+                    save_checkpoint(saveto_prefix=os.path.join(FLAGS.saveto, FLAGS.model_name),
+                                    global_step=uidx,
+                                    model=nmt_model,
+                                    optim=optim,
+                                    lr_scheduler=scheduler,
+                                    collections=model_collections,
+                                    max_keeps=training_configs["num_kept_checkpoints"])
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
