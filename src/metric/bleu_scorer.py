@@ -17,7 +17,7 @@ class SacreBLEUScorer(object):
     Scripts are mainly from moses for post-processing and BLEU computation
     """
 
-    def __init__(self, reference_path, lang_pair, sacrebleu_args=None, postprocess=False, num_refs=1):
+    def __init__(self, reference_path, lang_pair, sacrebleu_args=None, postprocess=False, num_refs=1, test_set=None):
         """Initialize Scorer
 
         Args:
@@ -52,6 +52,7 @@ class SacreBLEUScorer(object):
 
         self.src_lang, self.tgt_lang = self.lang_pair.split("-")[1]
         self.postprocess = postprocess
+        self.test_set = test_set
 
 
     def _postprocess_cmd(self, stdin):
@@ -62,6 +63,13 @@ class SacreBLEUScorer(object):
         return cmd_postprocess
 
     def _compute_bleu(self, stdin):
+
+        sacrebleu_cmd = ["sacrebleu", "-l", self.lang_pair] + self.sacrebleu_args + ["--score-only", ]
+
+        if self.test_set is not None:
+            sacrebleu_cmd += ['--test-set', ] + [self.test_set]
+        else:
+            sacrebleu_cmd += self.references
 
         cmd_bleu = subprocess.Popen(["sacrebleu", "-l", self.lang_pair] + self.sacrebleu_args + ["--score-only",] + self.references,
                                     stdin=stdin,
