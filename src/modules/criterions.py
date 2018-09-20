@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 from src.data.vocabulary import PAD
 
 
@@ -104,7 +105,6 @@ class NMTCriterion(Criterion):
             tdata = gtruth.detach()
 
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()  # mask of PAD
-            log_likelihood = torch.gather(scores, 1, tdata.unsqueeze(1))
 
             one_hot = self._smooth_label(num_tokens)  # Do label smoothing
             if labels.is_cuda:
@@ -113,7 +113,6 @@ class NMTCriterion(Criterion):
             tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
 
             if mask.numel() > 0:
-                log_likelihood.index_fill_(0, mask, 0)
                 tmp_.index_fill_(0, mask, 0)
             gtruth = tmp_.detach()
 
