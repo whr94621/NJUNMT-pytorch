@@ -233,12 +233,28 @@ class Generator(nn.Module):
         if shared_weight is not None:
             self.proj.linear.weight = shared_weight
 
+    def _pad_2d(self, x):
+
+        if self.padding_idx == -1:
+            return x
+        else:
+            x_size = x.size()
+            x_2d = x.view(-1, x.size(-1))
+
+            mask = x_2d.new(1, x_2d.size(-1)).zero_()
+            mask[0][self.padding_idx] = float('-inf')
+            x_2d = x_2d + mask
+
+            return x_2d.view(x_size)
+
     def forward(self, input, log_probs=True):
         """
         input == > Linear == > LogSoftmax
         """
 
         logits = self.proj(input)
+
+        logits = self._pad_2d(logits)
 
         if log_probs:
             return F.log_softmax(logits, dim=-1)
