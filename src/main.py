@@ -254,7 +254,7 @@ def loss_validation(model, critic, valid_iterator):
     valid_iter = valid_iterator.build_generator()
 
     for batch in valid_iter:
-        seqs_x, seqs_y = batch
+        _, seqs_x, seqs_y = batch
 
         n_sents += len(seqs_x)
         n_tokens += sum(len(s) for s in seqs_y)
@@ -287,6 +287,7 @@ def bleu_validation(uidx,
                     ):
     model.eval()
 
+    numbers = []
     trans = []
 
     infer_progress_bar = tqdm(total=len(valid_iterator),
@@ -297,15 +298,17 @@ def bleu_validation(uidx,
 
     for batch in valid_iter:
 
-        seqs_x = batch[0]
+        seq_nums = batch[0]
+        numbers += seq_nums
+
+        seqs_x = batch[1]
+
         infer_progress_bar.update(len(seqs_x))
 
         x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
 
         with torch.no_grad():
-            word_ids = beam_search(nmt_model=model, beam_size=5, max_steps=max_steps, src_seqs=x)
-
-        # word_ids = model(x, mode="infer", beam_size=5, max_steps=max_steps)
+            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
@@ -323,6 +326,9 @@ def bleu_validation(uidx,
                 trans.append(vocab_tgt.tokenizer.detokenize(x_tokens))
             else:
                 trans.append('%s' % vocab_tgt.id2token(EOS))
+
+    origin_order = np.argsort(numbers).tolist()
+    trans = [trans[ii] for ii in origin_order]
 
     infer_progress_bar.close()
 
@@ -482,7 +488,7 @@ def train(FLAGS):
 
     valid_iterator = DataIterator(dataset=valid_bitext_dataset,
                                   batch_size=training_configs['valid_batch_size'],
-                                  use_bucket=False)
+                                  use_bucket=True, buffer_size=100000, numbering=True)
 
     bleu_scorer = SacreBLEUScorer(reference_path=data_configs["bleu_valid_reference"],
                                   num_refs=data_configs["num_refs"],
@@ -766,7 +772,7 @@ def translate(FLAGS):
 
     valid_iterator = DataIterator(dataset=valid_dataset,
                                   batch_size=FLAGS.batch_size,
-                                  use_bucket=False)
+                                  use_bucket=True, buffer_size=100000, numbering=True)
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -793,6 +799,7 @@ def translate(FLAGS):
 
     INFO('Begin...')
 
+    result_numbers = []
     result = []
     n_words = 0
 
@@ -805,7 +812,7 @@ def translate(FLAGS):
     valid_iter = valid_iterator.build_generator()
     for batch in valid_iter:
 
-        seqs_x = batch
+        numbers, seqs_x = batch
 
         batch_size_t = len(seqs_x)
 
@@ -824,6 +831,8 @@ def translate(FLAGS):
 
             n_words += len(sent_t[0])
 
+        result_numbers += numbers
+
         infer_progress_bar.update(batch_size_t)
 
     infer_progress_bar.close()
@@ -841,6 +850,10 @@ def translate(FLAGS):
                 sample.append(vocab_tgt.id2token(w))
             samples.append(vocab_tgt.tokenizer.detokenize(sample))
         translation.append(samples)
+
+    # resume the ordering
+    origin_order = np.argsort(result_numbers).tolist()
+    translation = [translation[ii] for ii in origin_order]
 
     keep_n = FLAGS.beam_size if FLAGS.keep_n <= 0 else min(FLAGS.beam_size, FLAGS.keep_n)
     outputs = ['%s.%d' % (FLAGS.saveto, i) for i in range(keep_n)]
@@ -881,7 +894,7 @@ def ensemble_translate(FLAGS):
 
     valid_iterator = DataIterator(dataset=valid_dataset,
                                   batch_size=FLAGS.batch_size,
-                                  use_bucket=False)
+                                  use_bucket=True, buffer_size=100000, numbering=True)
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -916,7 +929,7 @@ def ensemble_translate(FLAGS):
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     INFO('Begin...')
-
+    result_numbers = []
     result = []
     n_words = 0
 
@@ -929,7 +942,7 @@ def ensemble_translate(FLAGS):
     valid_iter = valid_iterator.build_generator()
     for batch in valid_iter:
 
-        seqs_x = batch
+        numbers, seqs_x = batch
 
         batch_size_t = len(seqs_x)
 
@@ -965,6 +978,10 @@ def ensemble_translate(FLAGS):
                 sample.append(vocab_tgt.id2token(w))
             samples.append(vocab_tgt.tokenizer.detokenize(sample))
         translation.append(samples)
+
+    # resume the ordering
+    origin_order = np.argsort(result_numbers).tolist()
+    translation = [translation[ii] for ii in origin_order]
 
     keep_n = FLAGS.beam_size if FLAGS.keep_n <= 0 else min(FLAGS.beam_size, FLAGS.keep_n)
     outputs = ['%s.%d' % (FLAGS.saveto, i) for i in range(keep_n)]

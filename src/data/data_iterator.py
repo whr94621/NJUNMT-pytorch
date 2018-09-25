@@ -1,15 +1,18 @@
 import random
-
+from typing import Iterator
 import numpy as np
+from itertools import count
 
 from src.utils.common_utils import GlobalNames
-from .dataset import Record
+from .dataset import Record, zip_records
 
 __all__ = [
     'DataIterator'
 ]
 
 random.seed(GlobalNames.SEED)
+
+DEFAULT_BUFFER_SIZE_FACTOR = 20
 
 
 class Batch(object):
@@ -113,28 +116,16 @@ def fill_buffer(data_iter, stop, key):
     return records
 
 
-def accumulate_slicewhilce(data_iter, stop, key_func=lambda _: 1):
-    """Slicing data according to key function
-
-    Accumulate data into one batch until the accumulated value of key function
-    reach stop criterion.
+def numbering_records_iter(record_iter: Iterator[Record]):
+    """Numbering iterator from dataset.
     """
-
-    lines = []
-    count = 0
-    while True:
+    for ii in count():
         try:
-            line = next(data_iter)
+            record = next(record_iter)
         except StopIteration:
             break
 
-        lines.append(line)
-        count += key_func(line)
-
-        if count >= stop:
-            break
-
-    return lines
+        yield zip_records(Record(ii, index=-float('inf')), record)
 
 
 def add_noise_to_length(lengths, noise=1.0):
@@ -162,7 +153,9 @@ class DataIterator(object):
                  batch_size,
                  buffer_size=None,
                  use_bucket=True,
-                 batching_func="samples"):
+                 batching_func="samples",
+                 numbering=False
+                 ):
 
         """ Build data iterator given a dataset
 
@@ -196,11 +189,13 @@ class DataIterator(object):
         # the number of samples in one batch as self.batch_size // 50
 
         if buffer_size is None:
-            buffer_size = self.batch_size * 10
+            buffer_size = self.batch_size * DEFAULT_BUFFER_SIZE_FACTOR
 
         self._buffer_size = buffer_size
 
         self.use_bucket = use_bucket
+
+        self.numbering = numbering
 
         self.reset()
 
@@ -250,8 +245,13 @@ class DataIterator(object):
         return self._end
 
     def reset(self):
+
         self.buffer = []
-        self.data_iter = self.dataset.data_iter()
+        data_iter = self.dataset.data_iter()
+        if self.numbering:
+            data_iter = numbering_records_iter(data_iter)
+        self.data_iter = data_iter
+
         self._end = False
 
     def build_generator(self, batch_size=None):
