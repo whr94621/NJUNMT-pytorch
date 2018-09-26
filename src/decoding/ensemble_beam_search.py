@@ -29,7 +29,7 @@ from src.models.base import NMTModel
 from .utils import mask_scores, tensor_gather_helper
 
 
-def ensemble_beam_search(nmt_models: List[NMTModel], beam_size, max_steps, src_seqs):
+def ensemble_beam_search(nmt_models: List[NMTModel], beam_size, max_steps, src_seqs, alpha=-1.0):
     """
 
     Args:
@@ -76,16 +76,25 @@ def ensemble_beam_search(nmt_models: List[NMTModel], beam_size, max_steps, src_s
         vocab_size = beam_scores.size(-1)
 
         if t == 0:
-            beam_scores = beam_scores[:, 0, :].contiguous()
+            # Force to select first beam at step 0
+            beam_scores[:, 1:, :] = float('inf')
 
-        beam_scores = beam_scores.view(batch_size, -1)
+        # Length penalty
+        if alpha > 0.0:
+            normed_scores = beam_scores * (5.0 + 1.0) ** alpha / (5.0 + beam_mask + final_lengths).unsqueeze(2) ** alpha
+        else:
+            normed_scores = beam_scores.detach().clone()
+
+        normed_scores = normed_scores.view(batch_size, -1)
 
         # Get topK with beams
-        beam_scores, indices = torch.topk(beam_scores, k=beam_size, dim=-1, largest=False, sorted=False)
+        _, indices = torch.topk(normed_scores, k=beam_size, dim=-1, largest=False, sorted=False)
         next_beam_ids = torch.div(indices, vocab_size)
         next_word_ids = indices % vocab_size
 
         # Re-arrange by new beam indices
+        beam_scores = beam_scores.view(batch_size, -1)
+        beam_scores = torch.gather(beam_scores, 1, indices)
 
         beam_mask = tensor_gather_helper(gather_indices=next_beam_ids,
                                          gather_from=beam_mask,
@@ -124,7 +133,11 @@ def ensemble_beam_search(nmt_models: List[NMTModel], beam_size, max_steps, src_s
         if beam_mask.eq(0.0).all():
             break
 
-    scores = beam_scores / (final_lengths + 1e-2)
+    # Length penalty
+    if alpha > 0.0:
+        scores = beam_scores * (5.0 + 1.0) ** alpha / (5.0 + final_lengths) ** alpha
+    else:
+        scores = beam_scores / final_lengths
 
     _, reranked_ids = torch.sort(scores, dim=-1, descending=False)
 

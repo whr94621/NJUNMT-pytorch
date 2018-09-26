@@ -283,7 +283,8 @@ def bleu_validation(uidx,
                     batch_size,
                     valid_dir="./valid",
                     max_steps=10,
-                    beam_size=5
+                    beam_size=5,
+                    alpha=-1.0
                     ):
     model.eval()
 
@@ -308,7 +309,7 @@ def bleu_validation(uidx,
         x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
 
         with torch.no_grad():
-            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x)
+            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
@@ -398,11 +399,13 @@ def default_configs(configs):
 
     configs["training_configs"].setdefault("update_cycle", 1)
 
-    configs["training_configs"].setdefault("bleu_valid_beam_size", 5)
+    configs["training_configs"].setdefault("bleu_valid_beam_size", 4)
 
     configs["training_configs"].setdefault("bleu_valid_max_steps", 150)
 
     configs["training_configs"].setdefault("num_kept_checkpoints", 1)
+
+    configs['training_configs'].setdefault("bleu_valid_alpha", 0.6)
 
     return configs
 
@@ -702,7 +705,8 @@ def train(FLAGS):
                                              vocab_tgt=vocab_tgt,
                                              valid_dir=FLAGS.valid_path,
                                              max_steps=training_configs["bleu_valid_max_steps"],
-                                             beam_size=training_configs["bleu_valid_beam_size"]
+                                             beam_size=training_configs["bleu_valid_beam_size"],
+                                             alpha=training_configs['bleu_valid_alpha']
                                              )
 
                 model_collections.add_to_collection(key="history_bleus", value=valid_bleu)
@@ -820,7 +824,7 @@ def translate(FLAGS):
 
         with torch.no_grad():
             word_ids = beam_search(nmt_model=nmt_model, beam_size=FLAGS.beam_size, max_steps=FLAGS.max_steps,
-                                   src_seqs=x)
+                                   src_seqs=x, alpha=FLAGS.alpha)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
@@ -950,7 +954,7 @@ def ensemble_translate(FLAGS):
 
         with torch.no_grad():
             word_ids = ensemble_beam_search(nmt_models=nmt_models, beam_size=FLAGS.beam_size, max_steps=FLAGS.max_steps,
-                                            src_seqs=x)
+                                            src_seqs=x, alpha=FLAGS.alpha)
 
         word_ids = word_ids.cpu().numpy().tolist()
 

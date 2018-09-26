@@ -33,6 +33,7 @@ def test_transformer_inference(test_dir):
     source_path = "./unittests/data/dev/zh.0"
     batch_size = 3
     beam_size = 3
+    alpha = 0.6
 
     translate.run(model_name=model_name,
                   source_path=source_path,
@@ -42,7 +43,8 @@ def test_transformer_inference(test_dir):
                   use_gpu=False,
                   config_path=config_path,
                   saveto=saveto,
-                  max_steps=20)
+                  max_steps=20,
+                  alpha=alpha)
 
 
 def test_transformer_ensemble_inference(test_dir):
@@ -59,6 +61,7 @@ def test_transformer_ensemble_inference(test_dir):
     source_path = "./unittests/data/dev/zh.0"
     batch_size = 3
     beam_size = 3
+    alpha = 0.6
 
     ensemble_translate.run(model_name=model_name,
                            source_path=source_path,
@@ -68,7 +71,7 @@ def test_transformer_ensemble_inference(test_dir):
                            use_gpu=False,
                            config_path=config_path,
                            saveto=saveto,
-                           max_steps=20)
+                           max_steps=20, alpha=alpha)
 
 
 if __name__ == '__main__':
