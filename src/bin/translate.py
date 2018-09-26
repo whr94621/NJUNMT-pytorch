@@ -32,6 +32,9 @@ parser.add_argument("--use_gpu", action="store_true")
 parser.add_argument("--max_steps", type=int, default=150,
                     help="""Max steps of decoding. Default is 150.""")
 
+parser.add_argument("--alpha", type=float, default=-1.0,
+                    help="""Factor to do length penalty. Negative value means close length penalty.""")
+
 def run(**kwargs):
 
     args = parser.parse_args()

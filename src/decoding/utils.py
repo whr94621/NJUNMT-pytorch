@@ -48,6 +48,17 @@ def tile_batch(x, multiplier, batch_dim=0):
 
 
 def mask_scores(scores, beam_mask):
+    """
+    Mask scores of next step according to beam mask.
+    Args:
+        scores (torch.Tensor): Scores of next tokens with shape [batch_size, beam_size, vocab_size].
+            Smaller should be better (usually negative log-probs).
+        beam_mask (torch.Tensor): Mask of beam. 1.0 means not closed and vice verse. The shape is
+            [batch_size, beam_size]
+
+    Returns:
+        Masked scores of next tokens.
+    """
     vocab_size = scores.size(-1)
 
     finished_row = beam_mask.new(vocab_size, ).zero_() + float(_FLOAT32_INF)
@@ -95,3 +106,51 @@ def reranking_beams(word_ids, scores):
     reranked_word_ids = reranked_word_ids.tolist()
 
     return reranked_word_ids
+
+
+class LengthPenalty(object):
+
+    def __init__(self, alpha):
+        self.alpha = alpha
+
+    def normalize(self, scores, length):
+        """
+        Apply length penalty during decoding
+
+        Args:
+            log_probs (torch.Tensor): Next scores on each tokens, with shape (batch_size, beam_size, n_tokens)
+            length (torch.Tensor): Length of each beam, with shape (batch_size, beam_size)
+
+        Returns:
+            Normalzied scores.
+        """
+
+        if self.alpha > 0:
+            norm = (length + 1.0 + 5.0) ** self.alpha / (1.0 + 5.0) ** self.alpha
+            normalized_scores = scores / norm.unsqueeze(2)
+
+            return normalized_scores
+        else:
+            return scores
+
+    def global_normalize(self, scores, length):
+        """
+        Apply length penalty at the end of decoding
+
+        Args:
+            log_probs (torch.Tensor): Next scores on each tokens, with shape (batch_size, beam_size)
+            length (torch.Tensor): Length of each beam, with shape (batch_size, beam_size)
+
+        Returns:
+            Normalzied scores.
+        """
+
+        if self.alpha > 0:
+            norm = (length + 5.0) ** self.alpha / (1.0 + 5.0) ** self.alpha
+
+            normalized_scores = scores / norm
+
+            return normalized_scores
+        else:
+            # directly normed by length
+            return scores / (length + 1e-2)
