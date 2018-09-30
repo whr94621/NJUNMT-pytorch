@@ -10,7 +10,7 @@ model:
 only pytorch implementation which is exactly the same as original model.([nmtpytorch](https://github.com/lium-lst/nmtpytorch) is another pytorch implementation but with minor structure difference.)
 
 - [Attention is all you need](https://arxiv.org/abs/1706.03762): A strong nmt model introduced by Google, which only relies on attenion
-mechanism. Our implementation is different from the official [tensor2tenosr](https://github.com/tensorflow/tensor2tensor)
+mechanism.
 
 
 # Requirements
@@ -23,61 +23,64 @@ mechanism. Our implementation is different from the official [tensor2tenosr](htt
 
 # Usage
 
-## Data Preprocessing
+## 1. Build Vocabulary
+First we should generate vocabulary files for both source and 
+target language. We provide a script in ```./data/build_dictionary.py``` to build them in json format.
 
-See help of ```./data/build_dictionary.py```
-
-Vocabulary will be stored as json format.
-
+See how to use this script by running:
+``` bash
+python ./scripts/build_dictionary.py --help
+```
 We highly recommend not to set the limitation of the number of
 words and control it by config files while training.
 
-## Configuration
+## 2. Write Configuration File
 
-See examples in ```./configs``` folder. You can reproduce our
-Chinese-to-English Baseline by directly using those configures.
+See examples in ```./configs``` folder.  We provide several examples:
 
-```dl4mt_config.yaml``` is the configure file for **DL4MT** model using
-loss scheduling as the default.
+- ```dl4mt_nist_zh2en.yaml```: to run a DL4MT model on NIST Chinese to Enligsh
+- ```transformer_nist_zh2en.yaml```: to run a Transformer model on NIST Chinese to English
+- ```transformer_nist_zh2en_bpe.yaml```: to run a Transformer model on NIST Chinese to English using BPE.
+- ```transformer_wmt14_en2de.yaml```: to run a Transformer model on WMT14 English to German
 
-```transformer_base_config.yaml``` is the configure file for **Transformer**
-model using noam scheduling as the default 
+To further learn how to configure a NMT training task, see [this](https://github.com/whr94621/NJUNMT-pytorch/wiki/Configuration) wiki page.
 
-For more details on how to configure learning rate scheduler, please see examples in 
-```./configs/lr_schedule_examples```
-
-## Training
-See training script ```./scripts/train.sh```
+## 3. Training
+We can setup a training task by running
+``` bash
+export CUDA_VISIBLE_DEVICES=0
+python -m src.bin.train \
+    --model_name <your-model-name> \
+    --reload \
+    --config_path <your-config-path> \
+    --log_path <your-log-path> \
+    --saveto <path-to-save-checkpoints> \
+    --valid_path <path-to-save-validation-translation>
+```
+See detail options by running ```python -m src.bin.train --help```.
 
 ## Translation
-See translation script ```./scripts/translation.sh```
+
+When training is over, our code will automatically save the best model. We can translation any text by running:
+``` bash
+export CUDA_VISIBLE_DEVICES=0
+python -m src.bin.translate \
+    --model_name <your-model-name> \
+    --source_path <path-to-source-text> \
+    --model_path <path-to-model> \
+    --config_path <path-to-configuration> \
+    --batch_size <your-batch-size> \
+    --beam_size <your-beam-size> \
+    --alpha <your-length-penalty> \
+    --use_gpu
+```
+See detail options by running ```python -m src.bin.translate --help```.
+
+Also our code support ensemble decoding. See more options by running ```python -m src.bin.ensemble_translate --help```
 
 # Benchmark
 
 See [BENCHMARK.md](./BENCHMARK.md)
-
-# Q&A
-
-1. What is ```shard_size``` ?
-
-```shard_size``` is trick borrowed from OpenNMT-py, which
-
-could make large model run in the memory-limited condition.
-
-For example, you can run wmt17 EN2DE task on a 8GB GTX1080 card
-
-with batch size 64 by setting ```shard_size=10```
-
-**WARNINIG**: ```shard``` **is currently not supported in pytorch 0.4.0!**
-
-
-2. What is ```use_bucket``` ?
-
-When using bucket, parallel sentences will be sorted partially
-according to the length of target sentence.
-
-Set this option to ```true``` will bring considerable improvement
-but performance regression.
 
 # Acknowledgement
 

@@ -1,0 +1,65 @@
+data_configs:
+  lang_pair: "en-de"
+  train_data:
+    - "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/train.tok.clean.bpe.32000.en"
+    - "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/train.tok.clean.bpe.32000.de"
+  valid_data:
+    - "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/newstest2013.tok.bpe.32000.en"
+    - "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/newstest2013.tok.bpe.32000.de"
+  bleu_valid_reference: "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/newstest2013.de"
+  vocabularies:
+    - type: "bpe"
+      dict_path: "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/en.json"
+      max_n_words: -1
+    - type: "bpe"
+      dict_path: "/home/user_data/weihr/NMT_DATA_PY3/WMT14-DE-EN/de.json"
+      max_n_words: -1
+  max_len:
+    - -1
+    - -1
+  num_refs: 1
+  eval_at_char_level: false
+
+model_configs:
+  model: Transformer
+  n_layers: 6
+  n_head: 8
+  d_word_vec: 512
+  d_model: 512
+  d_inner_hid: 2048
+  dropout: 0.1
+  proj_share_weight: true
+  label_smoothing: 0.1
+
+optimizer_configs:
+  optimizer: "adam"
+  learning_rate: 0.2
+  grad_clip: -1.0
+  optimizer_params: ~
+  schedule_method: noam
+  scheduler_configs:
+    d_model: 512
+    warmup_steps: 8000
+
+training_configs:
+  seed: 1234
+  max_epochs: 50
+  shuffle: true
+  use_bucket: true
+  batch_size: 2500
+  batching_key: "tokens"
+  update_cycle: 10
+  valid_batch_size: 20
+  disp_freq: 500
+  save_freq: 500
+  num_kept_checkpoints: 1
+  loss_valid_freq: 500
+  bleu_valid_freq: 500
+  bleu_valid_batch_size: 20
+  bleu_valid_warmup: 1
+  bleu_valid_configs:
+    max_steps: 150
+    beam_size: 4
+    alpha: 0.6
+    postprocess: True
+  early_stop_patience: 50

@@ -14,11 +14,6 @@ import argparse
 import sys
 import time
 
-EOS = 0
-UNK = 1
-BOW = 2
-EOW = 3
-
 def INFO(string):
     time_format = '%Y-%m-%d %H:%M:%S'
     sys.stderr.write('{0}: {1}\n'.format(time.strftime(time_format), string))

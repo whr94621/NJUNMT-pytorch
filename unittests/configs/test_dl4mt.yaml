@@ -50,16 +50,17 @@ training_configs:
   batching_key: "samples"
   update_cycle: -1
   valid_batch_size: 100
-  bleu_valid_batch_size: 3
-  bleu_valid_max_steps: 10
-  bleu_valid_beam_size: 5
-  bleu_valid_warmup: 1
-  bleu_valid_configs:
-    sacrebleu_args: "--tokenize none -lc"
-    postprocess: false
   disp_freq: 100
   save_freq: 1000
   num_kept_checkpoints: 1
   loss_valid_freq: &decay_freq 10
   bleu_valid_freq: 100
+  bleu_valid_batch_size: 3
+  bleu_valid_warmup: 1
+  bleu_valid_configs:
+    max_steps: 10
+    beam_size: 5
+    alpha: 0.6
+    sacrebleu_args: "--tokenize none -lc"
+    postprocess: false
   early_stop_patience: 20
