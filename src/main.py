@@ -407,6 +407,14 @@ def default_configs(configs):
 
     configs['training_configs'].setdefault("bleu_valid_alpha", 0.6)
 
+    configs["training_configs"].setdefault("bleu_valid_configs", {
+                                               "beam_size": 5,
+                                               "alpha": 0.0,
+                                               "max_steps": 150,
+                                               "sacrebleu_args": "-tok none -lc",
+                                               "postprocess": False
+                                           })
+
     return configs
 
 
@@ -496,7 +504,8 @@ def train(FLAGS):
     bleu_scorer = SacreBLEUScorer(reference_path=data_configs["bleu_valid_reference"],
                                   num_refs=data_configs["num_refs"],
                                   lang_pair=data_configs["lang_pair"],
-                                  **training_configs["bleu_valid_configs"]
+                                  sacrebleu_args=training_configs["bleu_valid_configs"]['sacrebleu_args'],
+                                  postprocess=training_configs["bleu_valid_configs"]['postprocess']
                                   )
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
@@ -699,14 +708,14 @@ def train(FLAGS):
 
                 valid_bleu = bleu_validation(uidx=uidx,
                                              valid_iterator=valid_iterator,
-                                             batch_size=training_configs['bleu_valid_batch_size'],
+                                             batch_size=training_configs["bleu_valid_batch_size"],
                                              model=nmt_model,
                                              bleu_scorer=bleu_scorer,
                                              vocab_tgt=vocab_tgt,
                                              valid_dir=FLAGS.valid_path,
-                                             max_steps=training_configs["bleu_valid_max_steps"],
-                                             beam_size=training_configs["bleu_valid_beam_size"],
-                                             alpha=training_configs['bleu_valid_alpha']
+                                             max_steps=training_configs["bleu_valid_configs"]["max_steps"],
+                                             beam_size=training_configs["bleu_valid_configs"]["beam_size"],
+                                             alpha=training_configs["bleu_valid_configs"]["alpha"]
                                              )
 
                 model_collections.add_to_collection(key="history_bleus", value=valid_bleu)

@@ -1,9 +1,25 @@
 # Change Log
 
-## WIP
+## 2018/9/30
+
+### New Features - Different way to batch
+This feature enables you to use different way to batch your data. We provide two method, "samples" and "tokens". "samples" means how many bi-text pairs (samples) in one batch, while "tokens" means how many tokens in one batch (if there are several sentences in one sample, this means most tokens among them). You can use these two kinds of method by setting "batching_key" as "samples" or "tokens".
 
 ### New Features - Delayed Update
+This feature enables you to emuluate multi GPUs on a single GPU. By setting ```update_cycle``` as a value larger than 1, the model will compute forward and accumulate gradients for this many steps before parameters update, which behaves like one update step with actual batch size as ```update_cycle * batch_size```. For example, if we want to use 25000 tokens in a batch on a single 1080 GPU(8GB Mem), we can set ```batch_size``` as 1250 and ```update_cycle``` as 20. This will prevent OOM problem.
 
+### Improvments
+
+- Put source sentences with similar length into a batch during inference. This significantly improve the speed of beam search(beam size is 5) from 497.01 tokens/sec to 1179.05 tokens/sec on a single 1080ti GPU.
+- Use SacreBLEU to compute BLEU scores instead of ```multi-bleu.perl``` and ```multi-bleu-detok.perl```.
+- Add ```AdamW``` and ```Adafactor```
+- Count the number of pads when using "tokens" as batching key.
+- Add ensemble decoding with different checkpoints.
+- Add length penalty when decoding.
+
+### Bugs fix
+- Mask padding in generator.
+- RAM will not continue increasing during training.
 ## 2018/07/16
 
 ### New Features - Travis CI Enable
