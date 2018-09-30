@@ -11,13 +11,14 @@ before_install:
   - pip install tqdm
   - pip install pyyaml
   - pip install tensorboardX
+  - pip install sacrebleu
 
 sudo: false
 
 install: true
 
 before_script:
-  - cp ./unittest/run_all_test.sh .
+  - cp ./unittests/run_all_test.sh .
 
 script:
   - bash run_all_test.sh
