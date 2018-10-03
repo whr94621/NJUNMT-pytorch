@@ -28,7 +28,7 @@ def test_transformer_inference(test_dir):
 
     saveto = os.path.join(test_dir, "save")
     model_name = test_utils.get_model_name(config_path)
-    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
+    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
     source_path = "./unittests/data/dev/zh.0"
     batch_size = 3
     beam_size = 3

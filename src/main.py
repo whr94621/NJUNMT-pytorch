@@ -41,85 +41,9 @@ def set_seed(seed):
 def load_model_parameters(path, map_location="cpu"):
     state_dict = torch.load(path, map_location=map_location)
 
-    if "collections" in state_dict:
+    if "model" in state_dict:
         return state_dict["model"]
     return state_dict
-
-
-def save_checkpoint(saveto_prefix,
-                    global_step,
-                    model,
-                    optim,
-                    lr_scheduler,
-                    collections,
-                    max_keeps=1,
-                    **kwargs):
-    """ Saving checkpoints
-
-    Checkpoints will be saved as such format:
-        saveto_prefix.ckpt.[global_step].model
-        saveto_prefix.ckpt.[global_step].optim
-        saveto_prefix.ckpt.[global_step].collections
-    """
-    saveto_dir = os.path.dirname(saveto_prefix)
-
-    if not os.path.exists(saveto_dir):
-        os.mkdir(saveto_dir)
-
-    ckpt_list_path = saveto_prefix + ".checkpoints"
-
-    if os.path.exists(ckpt_list_path):
-        with open(ckpt_list_path) as f:
-            ckpt_list = f.readlines()
-        ckpt_list = [line.strip() for line in ckpt_list]
-    else:
-        ckpt_list = []
-
-    ckpt_state_dict = dict()
-
-    ckpt_state_dict["model"] = model.state_dict()
-    ckpt_state_dict["optim"] = optim.state_dict()
-    if lr_scheduler is not None:
-        ckpt_state_dict["lr_scheduler"] = lr_scheduler.state_dict()
-    ckpt_state_dict["collections"] = collections.state_dict()
-
-    saveto_path = saveto_prefix + ".ckpt." + str(global_step)
-    torch.save(ckpt_state_dict, saveto_path)
-
-    ckpt_list.append(os.path.basename(saveto_path))
-
-    if len(ckpt_list) > max_keeps:
-        out_of_date_ckpt = ckpt_list.pop(0)
-        os.remove(os.path.join(saveto_dir, out_of_date_ckpt))
-
-    with open(ckpt_list_path, 'w') as f:
-        f.write('\n'.join(ckpt_list))
-
-
-def load_latest_checkpoint(saveto_prefix,
-                           model,
-                           optim,
-                           lr_scheduler,
-                           collections):
-    saveto_dir = os.path.dirname(saveto_prefix)
-    ckpt_list_path = saveto_prefix + ".checkpoints"
-
-    if not os.path.exists(ckpt_list_path):
-        return
-
-    with open(ckpt_list_path) as f:
-        ckpt_list = f.readlines()
-
-    latest_ckpt = ckpt_list[-1].strip()
-    latest_ckpt_path = os.path.join(saveto_dir, latest_ckpt)
-
-    ckpt_state_dict = torch.load(latest_ckpt_path)
-
-    model.load_state_dict(ckpt_state_dict['model'])
-    optim.load_state_dict(ckpt_state_dict['optim'])
-    if lr_scheduler is not None:
-        lr_scheduler.load_state_dict(ckpt_state_dict['lr_scheduler'])
-    collections.load_state_dict(ckpt_state_dict['collections'])
 
 
 def split_shard(*inputs, split_size=1):
@@ -405,15 +329,17 @@ def default_configs(configs):
 
     configs["training_configs"].setdefault("num_kept_checkpoints", 1)
 
+    configs['training_configs'].setdefault("num_kept_best_model", 1)
+
     configs['training_configs'].setdefault("bleu_valid_alpha", 0.6)
 
     configs["training_configs"].setdefault("bleu_valid_configs", {
-                                               "beam_size": 5,
-                                               "alpha": 0.0,
-                                               "max_steps": 150,
-                                               "sacrebleu_args": "-tok none -lc",
-                                               "postprocess": False
-                                           })
+        "beam_size": 5,
+        "alpha": 0.0,
+        "max_steps": 150,
+        "sacrebleu_args": "-tok none -lc",
+        "postprocess": False
+    })
 
     return configs
 
@@ -453,7 +379,7 @@ def train(FLAGS):
 
     set_seed(GlobalNames.SEED)
 
-    saveto_best_model = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
+    best_model_prefix = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
 
     timer = Timer()
 
@@ -523,8 +449,12 @@ def train(FLAGS):
     #     5. build learning rate scheduler if needed
     #     6. load checkpoints if needed
 
-    # 0. Initial collections
+    # 0. Initial
     model_collections = Collections()
+    checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(FLAGS.saveto, FLAGS.model_name)),
+                             num_max_keeping=training_configs['num_kept_checkpoints']
+                             )
+    best_model_saver = Saver(save_prefix=best_model_prefix, num_max_keeping=training_configs['num_kept_best_model'])
 
     # 1. Build Model & Criterion
     INFO('Building model...')
@@ -575,11 +505,8 @@ def train(FLAGS):
 
     # Reload from latest checkpoint
     if FLAGS.reload:
-        load_latest_checkpoint(saveto_prefix=os.path.join(FLAGS.saveto, FLAGS.model_name),
-                               model=nmt_model,
-                               optim=optim,
-                               lr_scheduler=scheduler,
-                               collections=model_collections)
+        checkpoint_saver.load_latest(model=nmt_model, optim=optim, lr_scheduler=scheduler,
+                                     collections=model_collections)
 
     # ================================================================================== #
     # Prepare training
@@ -672,13 +599,12 @@ def train(FLAGS):
                 model_collections.add_to_collection("bad_count", bad_count)
 
                 if not is_early_stop:
-                    save_checkpoint(saveto_prefix=os.path.join(FLAGS.saveto, FLAGS.model_name),
-                                    global_step=uidx,
-                                    model=nmt_model,
-                                    optim=optim,
-                                    lr_scheduler=scheduler,
-                                    collections=model_collections,
-                                    max_keeps=training_configs["num_kept_checkpoints"])
+                    # 1. save the best model
+                    torch.save(nmt_model.state_dict(), best_model_prefix + ".final")
+
+                    # 2. record all several best models
+                    checkpoint_saver.save(global_step=uidx, model=nmt_model, optim=optim, lr_scheduler=scheduler,
+                                          collections=model_collections)
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
@@ -730,13 +656,7 @@ def train(FLAGS):
                     bad_count = 0
 
                     if is_early_stop is False:
-                        INFO('Saving best model...')
-
-                        # save model
-                        best_params = nmt_model.state_dict()
-                        torch.save(best_params, saveto_best_model)
-                        INFO('Done.')
-
+                        best_model_saver.save(global_step=uidx, model=nmt_model)
                 else:
                     bad_count += 1
 

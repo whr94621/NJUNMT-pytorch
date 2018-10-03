@@ -1,3 +1,5 @@
+import os
+import torch
 import time
 import contextlib
 import copy
@@ -12,7 +14,8 @@ __all__ = [
     'Collections',
     'build_vocab_shortlist',
     'to_gpu',
-    'should_trigger_by_steps'
+    'should_trigger_by_steps',
+    'Saver'
 ]
 
 
@@ -39,9 +42,7 @@ class GlobalNames:
 
     MY_CHECKPOINIS_PREFIX = ".ckpt"
 
-    MY_BEST_MODEL_SUFFIX = ".best.tpz"
-
-    MY_BEST_OPTIMIZER_PARAMS_SUFFIX = ".best_optim.tpz"
+    MY_BEST_MODEL_SUFFIX = ".best"
 
     MY_COLLECTIONS_SUFFIX = ".collections.pkl"
 
@@ -126,6 +127,7 @@ class Collections(object):
 
         self._kv_stores = copy.deepcopy(state_dict)
 
+
 def build_vocab_shortlist(shortlist):
     shortlist_ = nest.flatten(shortlist)
 
@@ -186,3 +188,76 @@ def should_trigger_by_steps(global_step,
             return True
         else:
             return False
+
+
+class Saver(object):
+    """ Saver to save and restore objects.
+
+    Saver only accept objects which contain two method: ```state_dict``` and ```load_state_dict```
+    """
+
+    def __init__(self, save_prefix, num_max_keeping=1):
+
+        self.save_prefix = save_prefix.rstrip(".")
+
+        save_dir = os.path.dirname(self.save_prefix)
+
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
+
+        self.save_dir = save_dir
+
+        if os.path.exists(self.save_prefix):
+            with open(self.save_prefix) as f:
+                save_list = f.readlines()
+            save_list = [line.strip() for line in save_list]
+        else:
+            save_list = []
+
+        self.save_list = save_list
+        self.num_max_keeping = num_max_keeping
+
+    @staticmethod
+    def savable(obj):
+
+        if hasattr(obj, "state_dict") and hasattr(obj, "load_state_dict"):
+            return True
+        else:
+            return False
+
+    def save(self, global_step, **kwargs):
+
+        state_dict = dict()
+
+        for key, obj in kwargs.items():
+            if self.savable(obj):
+                state_dict[key] = obj.state_dict()
+
+        saveto_path = '{0}.{1}'.format(self.save_prefix, global_step)
+        torch.save(state_dict, saveto_path)
+
+        self.save_list.append(os.path.basename(saveto_path))
+
+        if len(self.save_list) > self.num_max_keeping:
+            out_of_date_state_dict = self.save_list.pop(0)
+            os.remove(os.path.join(self.save_dir, out_of_date_state_dict))
+
+        with open(self.save_prefix, "w") as f:
+            f.write("\n".join(self.save_list))
+
+    def load_latest(self, **kwargs):
+
+        if len(self.save_list) == 0:
+            return
+
+        latest_path = os.path.join(self.save_dir, self.save_list[-1])
+
+        state_dict = torch.load(latest_path)
+
+        for name, obj in kwargs.items():
+            if self.savable(obj):
+
+                if name not in state_dict:
+                    print("Warning: {0} has no content saved!")
+                else:
+                    obj.load_state_dict(state_dict[name])
