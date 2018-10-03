@@ -7,6 +7,7 @@ import torch
 import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
+from copy import deepcopy
 
 from src.data.data_iterator import DataIterator
 from src.data.dataset import TextLineDataset, ZipDataset
@@ -19,6 +20,7 @@ from src.optim import Optimizer
 from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
 from src.utils.common_utils import *
 from src.utils.logging import *
+from src.utils.ema import ExponentialMovingAverage
 
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
@@ -333,6 +335,8 @@ def default_configs(configs):
 
     configs['training_configs'].setdefault("bleu_valid_alpha", 0.6)
 
+    configs['training_configs'].setdefault("ema_decay", 0.0)
+
     configs["training_configs"].setdefault("bleu_valid_configs", {
         "beam_size": 5,
         "alpha": 0.0,
@@ -501,6 +505,12 @@ def train(FLAGS):
     else:
         scheduler = None
 
+    # 6. build EMA
+    if training_configs['ema_decay'] > 0.0:
+        ema = ExponentialMovingAverage(named_params=nmt_model.named_parameters(), decay=training_configs['ema_decay'])
+    else:
+        ema = None
+
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # Reload from latest checkpoint
@@ -574,6 +584,9 @@ def train(FLAGS):
                                        norm_by_words=training_configs["norm_by_words"])
             optim.step()
 
+            if ema is not None:
+                ema.step()
+
             # ================================================================================== #
             # Display some information
             if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['disp_freq']):
@@ -604,12 +617,17 @@ def train(FLAGS):
 
                     # 2. record all several best models
                     checkpoint_saver.save(global_step=uidx, model=nmt_model, optim=optim, lr_scheduler=scheduler,
-                                          collections=model_collections)
+                                          collections=model_collections, ema=ema)
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
             if should_trigger_by_steps(global_step=uidx, n_epoch=eidx, every_n_step=training_configs['loss_valid_freq'],
                                        debug=FLAGS.debug):
+
+                if ema is not None:
+                    origin_state_dict = deepcopy(nmt_model.state_dict())
+                    nmt_model.load_state_dict(ema.state_dict(), strict=False)
+
                 valid_loss = loss_validation(model=nmt_model,
                                              critic=critic,
                                              valid_iterator=valid_iterator,
@@ -624,6 +642,10 @@ def train(FLAGS):
 
                 best_valid_loss = min_history_loss
 
+                if ema is not None:
+                    nmt_model.load_state_dict(origin_state_dict)
+                    del origin_state_dict
+
             # ================================================================================== #
             # BLEU Validation & Early Stop
 
@@ -631,6 +653,10 @@ def train(FLAGS):
                                        every_n_step=training_configs['bleu_valid_freq'],
                                        min_step=training_configs['bleu_valid_warmup'],
                                        debug=FLAGS.debug):
+
+                if ema is not None:
+                    origin_state_dict = deepcopy(nmt_model.state_dict())
+                    nmt_model.load_state_dict(ema.state_dict(), strict=False)
 
                 valid_bleu = bleu_validation(uidx=uidx,
                                              valid_iterator=valid_iterator,
@@ -666,6 +692,10 @@ def train(FLAGS):
                         WARN("Early Stop!")
 
                 summary_writer.add_scalar("bad_count", bad_count, uidx)
+
+                if ema is not None:
+                    nmt_model.load_state_dict(origin_state_dict)
+                    del origin_state_dict
 
                 INFO("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}".format(
                     uidx, valid_loss, valid_bleu, lrate, bad_count

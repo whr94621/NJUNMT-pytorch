@@ -67,3 +67,4 @@ training_configs:
     sacrebleu_args: "--tokenize none -lc"
     postprocess: false
   early_stop_patience: 20
+  ema_decay: 0.999
