@@ -30,8 +30,8 @@ parser.add_argument('--pretrain_path', type=str, default="", help="The path for 
 parser.add_argument("--valid_path", type=str, default="./valid",
                     help="""Path to save translation for bleu evaulation. Default is ./valid.""")
 
-def run(**kwargs):
 
+def run(**kwargs):
     args = parser.parse_args()
 
     # Modify some options.
@@ -45,3 +45,5 @@ def run(**kwargs):
     train(args)
 
 
+if __name__ == '__main__':
+    run()

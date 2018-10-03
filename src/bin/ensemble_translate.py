@@ -58,6 +58,7 @@ parser.add_argument("--max_steps", type=int, default=150,
 parser.add_argument("--alpha", type=float, default=-1.0,
                     help="""Factor to do length penalty. Negative value means close length penalty.""")
 
+
 def run(**kwargs):
     args = parser.parse_args()
 
@@ -66,3 +67,7 @@ def run(**kwargs):
         setattr(args, k, v)
 
     ensemble_translate(args)
+
+
+if __name__ == '__main__':
+    run()

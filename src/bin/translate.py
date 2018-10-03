@@ -44,3 +44,6 @@ def run(**kwargs):
         setattr(args, k, v)
 
     translate(args)
+
+if __name__ == '__main__':
+    run()
