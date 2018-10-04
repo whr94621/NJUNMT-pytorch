@@ -24,6 +24,7 @@ model_configs:
   model: Transformer
   n_layers: 2
   n_head: 3
+  dim_per_head: 7
   d_word_vec: 24
   d_model: 24
   d_inner_hid: 17

@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
+
 class PositionwiseFeedForward(nn.Module):
     """ A two-layer Feed-Forward-Network with residual layer norm.
 
@@ -11,6 +12,7 @@ class PositionwiseFeedForward(nn.Module):
                               of the FNN.
             dropout (float): dropout probability(0-1.0).
     """
+
     def __init__(self, size, hidden_size, dropout=0.1):
         super(PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(size, hidden_size)
@@ -26,54 +28,21 @@ class PositionwiseFeedForward(nn.Module):
         output = self.dropout_2(self.w_2(inter))
         return output + x
 
+
 class MultiHeadedAttention(nn.Module):
-    """
-    Multi-Head Attention module from
-    "Attention is All You Need"
-    :cite:`DBLP:journals/corr/VaswaniSPUJGKP17`.
-
-    Similar to standard `dot` attention but uses
-    multiple attention distributions simulataneously
-    to select relevant items.
-
-    .. mermaid::
-
-       graph BT
-          A[key]
-          B[value]
-          C[query]
-          O[output]
-          subgraph Attn
-            D[Attn 1]
-            E[Attn 2]
-            F[Attn N]
-          end
-          A --> D
-          C --> D
-          A --> E
-          C --> E
-          A --> F
-          C --> F
-          D --> O
-          E --> O
-          F --> O
-          B --> O
-
-    Also includes several additional tricks.
-
-    Args:
-       head_count (int): number of parallel heads
-       model_dim (int): the dimension of keys/values/queries,
-           must be divisible by head_count
-       dropout (float): dropout parameter
-    """
-    def __init__(self, head_count, model_dim, dropout=0.1):
-        assert model_dim % head_count == 0
-        self.dim_per_head = model_dim // head_count
-        self.model_dim = model_dim
+    def __init__(self, model_dim, head_count, dim_per_head=None, dropout=0.1):
 
         super(MultiHeadedAttention, self).__init__()
+
+        if dim_per_head is None:
+            assert model_dim % head_count == 0
+            dim_per_head = model_dim // head_count
+
         self.head_count = head_count
+
+        self.dim_per_head = dim_per_head
+
+        self.model_dim = model_dim
 
         self.linear_keys = nn.Linear(model_dim,
                                      head_count * self.dim_per_head)
@@ -83,14 +52,14 @@ class MultiHeadedAttention(nn.Module):
                                       head_count * self.dim_per_head)
         self.sm = nn.Softmax(dim=-1)
         self.dropout = nn.Dropout(dropout)
-        self.final_linear = nn.Linear(model_dim, model_dim)
+        self.final_linear = nn.Linear(self.dim_per_head * head_count, model_dim)
 
     def _split_heads(self, x):
 
         batch_size = x.size(0)
 
         return x.view(batch_size, -1, self.head_count, self.dim_per_head) \
-            .transpose(1, 2)
+            .transpose(1, 2).contiguous()
 
     def _combine_heads(self, x):
 
@@ -128,7 +97,7 @@ class MultiHeadedAttention(nn.Module):
         if enc_attn_cache is not None:
             key_up, value_up = enc_attn_cache
         else:
-            key_up = self._split_heads(self.linear_keys(key)) # [batch_size, num_head, seq_len, dim_head]
+            key_up = self._split_heads(self.linear_keys(key))  # [batch_size, num_head, seq_len, dim_head]
             value_up = self._split_heads(self.linear_values(value))
 
         if self_attn_cache is not None:
@@ -147,7 +116,6 @@ class MultiHeadedAttention(nn.Module):
         scores = torch.matmul(query_up, key_up.transpose(2, 3))
 
         if mask is not None:
-
             mask = mask.unsqueeze(1).expand_as(scores)
             scores = scores.masked_fill(mask, -1e18)
 
@@ -160,8 +128,8 @@ class MultiHeadedAttention(nn.Module):
 
         # Return one attn
         top_attn = attn \
-            .view(batch_size, head_count,
-                  query_len, key_len)[:, 0, :, :] \
+                       .view(batch_size, head_count,
+                             query_len, key_len)[:, 0, :, :] \
             .contiguous()
         # END CHECK
         return output, top_attn, [key_up, value_up]

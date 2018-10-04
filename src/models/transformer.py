@@ -51,12 +51,13 @@ def get_attn_causal_mask(seq):
 
 class EncoderBlock(nn.Module):
 
-    def __init__(self, d_model, d_inner_hid, n_head, dropout=0.1):
+    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1):
         super(EncoderBlock, self).__init__()
 
         self.layer_norm = nn.LayerNorm(d_model)
 
-        self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
+        self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                             dim_per_head=dim_per_head)
 
         self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid, dropout=dropout)
 
@@ -74,7 +75,7 @@ class Encoder(nn.Module):
 
     def __init__(
             self, n_src_vocab, n_layers=6, n_head=8,
-            d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1):
+            d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1, dim_per_head=None):
         super().__init__()
 
         self.num_layers = n_layers
@@ -84,7 +85,8 @@ class Encoder(nn.Module):
                                      add_position_embedding=True
                                      )
         self.block_stack = nn.ModuleList(
-            [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
+            [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
+                          dim_per_head=dim_per_head)
              for _ in range(n_layers)])
 
         self.layer_norm = nn.LayerNorm(d_model)
@@ -111,11 +113,13 @@ class Encoder(nn.Module):
 class DecoderBlock(nn.Module):
     ''' Compose with three layers '''
 
-    def __init__(self, d_model, d_inner_hid, n_head, dropout=0.1):
+    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1):
         super(DecoderBlock, self).__init__()
 
-        self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
-        self.ctx_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout)
+        self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                             dim_per_head=dim_per_head)
+        self.ctx_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                             dim_per_head=dim_per_head)
         self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid)
 
         self.layer_norm_1 = nn.LayerNorm(d_model)
@@ -155,7 +159,7 @@ class Decoder(nn.Module):
 
     def __init__(
             self, n_tgt_vocab, n_layers=6, n_head=8,
-            d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1):
+            d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None, dropout=0.1):
 
         super(Decoder, self).__init__()
 
@@ -167,14 +171,20 @@ class Decoder(nn.Module):
                                      dropout=dropout, add_position_embedding=True)
 
         self.block_stack = nn.ModuleList([
-            DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
+            DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
+                         dim_per_head=dim_per_head)
             for _ in range(n_layers)])
 
         self.out_layer_norm = nn.LayerNorm(d_model)
 
+        self._dim_per_head = dim_per_head
+
     @property
     def dim_per_head(self):
-        return self.d_model // self.n_head
+        if self._dim_per_head is None:
+            return self.d_model // self.n_head
+        else:
+            return self._dim_per_head
 
     def forward(self, tgt_seq, enc_output, enc_mask, enc_attn_caches=None, self_attn_caches=None):
 
@@ -267,7 +277,7 @@ class Transformer(nn.Module):
 
     def __init__(
             self, n_src_vocab, n_tgt_vocab, n_layers=6, n_head=8,
-            d_word_vec=512, d_model=512, d_inner_hid=1024,
+            d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None,
             dropout=0.1, proj_share_weight=True, **kwargs):
 
         super(Transformer, self).__init__()
@@ -275,12 +285,12 @@ class Transformer(nn.Module):
         self.encoder = Encoder(
             n_src_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
-            d_inner_hid=d_inner_hid, dropout=dropout)
+            d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head)
 
         self.decoder = Decoder(
             n_tgt_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
-            d_inner_hid=d_inner_hid, dropout=dropout)
+            d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head)
 
         self.dropout = nn.Dropout(dropout)
 
