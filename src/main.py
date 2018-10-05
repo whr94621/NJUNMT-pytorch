@@ -21,6 +21,7 @@ from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
 from src.utils.common_utils import *
 from src.utils.logging import *
 from src.utils.ema import ExponentialMovingAverage
+from src.utils.configs import default_configs, pretty_configs
 
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
@@ -310,44 +311,6 @@ def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None)
         INFO("Pretrained model loaded.")
 
 
-def default_configs(configs):
-    configs["data_configs"].setdefault("bleu_valid_reference", "")
-
-    configs["data_configs"].setdefault("num_refs", 1)
-
-    configs["model_configs"].setdefault("label_smoothing", 0.0)
-
-    configs["training_configs"].setdefault("seed", 1234)
-
-    configs["training_configs"].setdefault("norm_by_words", False)
-
-    configs["training_configs"].setdefault("buffer_size", 20 * configs["training_configs"]["batch_size"])
-
-    configs["training_configs"].setdefault("update_cycle", 1)
-
-    configs["training_configs"].setdefault("bleu_valid_beam_size", 4)
-
-    configs["training_configs"].setdefault("bleu_valid_max_steps", 150)
-
-    configs["training_configs"].setdefault("num_kept_checkpoints", 1)
-
-    configs['training_configs'].setdefault("num_kept_best_model", 1)
-
-    configs['training_configs'].setdefault("bleu_valid_alpha", 0.6)
-
-    configs['training_configs'].setdefault("ema_decay", 0.0)
-
-    configs["training_configs"].setdefault("bleu_valid_configs", {
-        "beam_size": 5,
-        "alpha": 0.0,
-        "max_steps": 150,
-        "sacrebleu_args": "-tok none -lc",
-        "postprocess": False
-    })
-
-    return configs
-
-
 def train(FLAGS):
     """
     FLAGS:
@@ -372,6 +335,9 @@ def train(FLAGS):
     config_path = os.path.abspath(FLAGS.config_path)
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
+
+    INFO(pretty_configs(configs))
+
     # Add default configs
     configs = default_configs(configs)
     data_configs = configs['data_configs']
