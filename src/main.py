@@ -578,10 +578,7 @@ def train(FLAGS):
                 model_collections.add_to_collection("bad_count", bad_count)
 
                 if not is_early_stop:
-                    # 1. save the best model
-                    torch.save(nmt_model.state_dict(), best_model_prefix + ".final")
 
-                    # 2. record all several best models
                     checkpoint_saver.save(global_step=uidx, model=nmt_model, optim=optim, lr_scheduler=scheduler,
                                           collections=model_collections, ema=ema)
 
@@ -648,6 +645,10 @@ def train(FLAGS):
                     bad_count = 0
 
                     if is_early_stop is False:
+                        # 1. save the best model
+                        torch.save(nmt_model.state_dict(), best_model_prefix + ".final")
+
+                        # 2. record all several best models
                         best_model_saver.save(global_step=uidx, model=nmt_model)
                 else:
                     bad_count += 1
