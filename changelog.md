@@ -1,5 +1,14 @@
 # Change Log
 
+## 2018/10/09
+
+### Improvments
+
+- Save k-best models.
+- Add ```dim_per_head``` option for transformer. Now ```dim_per_head``` * ```n_head``` can not equal to ```d_model```.
+- Add exponential moving average (EMA).
+- Support pytorch 0.4.1
+
 ## 2018/9/30
 
 ### New Features - Different way to batch

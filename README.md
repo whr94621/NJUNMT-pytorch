@@ -16,7 +16,7 @@ mechanism.
 # Requirements
 
 - python 3.5+
-- pytorch 0.4.0
+- pytorch 0.4.0+
 - tqdm
 - tensorboardX
 - sacrebleu
@@ -86,6 +86,9 @@ See [BENCHMARK.md](./BENCHMARK.md)
 
 - This code is heavily borrowed from OpenNMT/OpenNMT-py and have been
 simplified for research use.
+
+# Contact
+If you have any question, please contact [whr94621@foxmail.com](mailto:whr94621@foxmail.com)
 
 
 
