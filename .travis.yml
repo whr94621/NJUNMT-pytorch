@@ -1,12 +1,6 @@
 language: python
 python: "3.6"
 
-# whitelist
-branches:
-  only:
-    - master
-    - dev.*
-
 matrix:
   include:
     - env: TORCH_VER="0.4.1"
