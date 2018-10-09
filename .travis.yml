@@ -5,17 +5,16 @@ python: "3.6"
 branches:
   only:
     - master
+    - dev.*
 
-before_install:
-  - pip install http://download.pytorch.org/whl/cpu/torch-0.4.0-cp36-cp36m-linux_x86_64.whl
-  - pip install tqdm
-  - pip install pyyaml
-  - pip install tensorboardX
-  - pip install sacrebleu
+matrix:
+  include:
+    - env: TORCH_VER="0.4.1"
+    - env: TORCH_VER="0.4.0"
 
 sudo: false
 
-install: true
+install: bash ./.travis/install.sh
 
 before_script:
   - cp ./unittests/run_all_test.sh .
