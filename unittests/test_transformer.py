@@ -47,6 +47,31 @@ def test_transformer_inference(test_dir):
                   alpha=alpha)
 
 
+def test_transformer_greedy_search(test_dir):
+    from src.bin import translate
+    from src.utils.common_utils import GlobalNames
+    config_path = "./unittests/configs/test_transformer.yaml"
+
+    saveto = os.path.join(test_dir, "save")
+    model_name = test_utils.get_model_name(config_path)
+    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
+    source_path = "./unittests/data/dev/zh.0"
+    batch_size = 3
+    beam_size = 1
+    alpha = 0.6
+
+    translate.run(model_name=model_name,
+                  source_path=source_path,
+                  batch_size=batch_size,
+                  beam_size=beam_size,
+                  model_path=model_path,
+                  use_gpu=False,
+                  config_path=config_path,
+                  saveto=saveto,
+                  max_steps=10,
+                  alpha=alpha)
+
+
 def test_transformer_ensemble_inference(test_dir):
     from src.bin import ensemble_translate
     from src.utils.common_utils import GlobalNames
@@ -90,6 +115,12 @@ if __name__ == '__main__':
     INFO("=" * 20)
     INFO("Test transformer inference...")
     test_transformer_inference(test_dir)
+    INFO("Done.")
+    INFO("=" * 20)
+
+    INFO("=" * 20)
+    INFO("Test transformer greedy search...")
+    test_transformer_greedy_search(test_dir)
     INFO("Done.")
     INFO("=" * 20)
 

@@ -75,7 +75,7 @@ def ensemble_beam_search(nmt_models: List[NMTModel], beam_size, max_steps, src_s
 
         vocab_size = beam_scores.size(-1)
 
-        if t == 0:
+        if t == 0 and beam_size > 1:
             # Force to select first beam at step 0
             beam_scores[:, 1:, :] = float('inf')
 
