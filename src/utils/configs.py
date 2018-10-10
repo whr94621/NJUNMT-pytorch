@@ -130,7 +130,6 @@ def default_dl4mt_configs(default_configs):
 
 
 def default_configs(user_configs):
-
     # init default configs
     base_configs = default_base_configs()
 
@@ -153,6 +152,11 @@ def default_configs(user_configs):
                             default_noam_schedule_configs(d_model=user_configs['model_configs']['d_model']))
     else:
         pass
+
+    actual_batch_size = user_configs['training_configs']['batch_size'] * max(
+        user_configs['training_configs']['update_cycle'], 1)
+
+    user_configs['training_configs'].setdefault("buffer_size", actual_batch_size * 20)
 
     return user_configs
 
