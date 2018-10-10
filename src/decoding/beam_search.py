@@ -24,7 +24,7 @@ import torch
 
 from src.data.vocabulary import BOS, EOS, PAD
 from src.models.base import NMTModel
-from .utils import mask_scores, tensor_gather_helper, LengthPenalty
+from .utils import mask_scores, tensor_gather_helper
 
 
 def beam_search(nmt_model, beam_size, max_steps, src_seqs, alpha=-1.0):

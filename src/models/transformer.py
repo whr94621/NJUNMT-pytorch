@@ -31,7 +31,6 @@ from src.modules.basic import BottleLinear as Linear
 from src.modules.embeddings import Embeddings
 from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.utils import nest
-from src.utils.beam_search import tile_batch, tensor_gather_helper
 
 
 def get_attn_causal_mask(seq):
