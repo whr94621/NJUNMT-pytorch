@@ -4,7 +4,7 @@ import unittests.test_utils as test_utils
 from src.utils.logging import INFO
 
 
-def test_transformer_train(test_dir):
+def test_transformer_train(test_dir, use_gpu=False):
     from src.bin import train
 
     config_path = "./unittests/configs/test_transformer.yaml"
@@ -22,7 +22,7 @@ def test_transformer_train(test_dir):
               debug=True)
 
 
-def test_transformer_inference(test_dir):
+def test_transformer_inference(test_dir, use_gpu=False):
     from src.bin import translate
     from src.utils.common_utils import GlobalNames
     config_path = "./unittests/configs/test_transformer.yaml"
@@ -47,7 +47,7 @@ def test_transformer_inference(test_dir):
                   alpha=alpha)
 
 
-def test_transformer_greedy_search(test_dir):
+def test_transformer_greedy_search(test_dir, use_gpu=False):
     from src.bin import translate
     from src.utils.common_utils import GlobalNames
     config_path = "./unittests/configs/test_transformer.yaml"
@@ -72,7 +72,7 @@ def test_transformer_greedy_search(test_dir):
                   alpha=alpha)
 
 
-def test_transformer_ensemble_inference(test_dir):
+def test_transformer_ensemble_inference(test_dir, use_gpu=False):
     from src.bin import ensemble_translate
     from src.utils.common_utils import GlobalNames
     config_path = "./unittests/configs/test_transformer.yaml"
@@ -103,30 +103,39 @@ if __name__ == '__main__':
 
     test_dir = "./tmp"
 
+    parser = test_utils.build_test_argparser()
+    args = parser.parse_args()
+
     if not os.path.exists(test_dir):
         os.makedirs(test_dir, exist_ok=True)
 
     INFO("=" * 20)
     INFO("Test transformer training...")
-    test_transformer_train(test_dir)
+    test_transformer_train(test_dir, use_gpu=args.use_gpu)
+    INFO("Done.")
+    INFO("=" * 20)
+
+    INFO("=" * 20)
+    INFO("Test resuming from training...")
+    test_transformer_train(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
 
     INFO("=" * 20)
     INFO("Test transformer inference...")
-    test_transformer_inference(test_dir)
+    test_transformer_inference(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
 
     INFO("=" * 20)
     INFO("Test transformer greedy search...")
-    test_transformer_greedy_search(test_dir)
+    test_transformer_greedy_search(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
 
     INFO("=" * 20)
     INFO("Test ensemble inference...")
-    test_transformer_ensemble_inference(test_dir)
+    test_transformer_ensemble_inference(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
 

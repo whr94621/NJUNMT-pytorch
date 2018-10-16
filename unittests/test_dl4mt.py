@@ -1,9 +1,31 @@
+# MIT License
+
+# Copyright (c) 2018 the NJUNMT-pytorch authors.
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 import os
 from src.utils.logging import INFO
 import unittests.test_utils as test_utils
 
 
-def test_dl4mt_train(test_dir):
+def test_dl4mt_train(test_dir, use_gpu=False):
     from src.bin import train
 
     config_path = "./unittests/configs/test_dl4mt.yaml"
@@ -18,10 +40,10 @@ def test_dl4mt_train(test_dir):
               saveto=saveto,
               log_path=log_path,
               valid_path=valid_path,
-              debug=True)
+              debug=True, use_gpu=use_gpu)
 
 
-def test_dl4mt_inference(test_dir):
+def test_dl4mt_inference(test_dir, use_gpu=False):
     from src.bin import translate
     from src.utils.common_utils import GlobalNames
 
@@ -39,13 +61,16 @@ def test_dl4mt_inference(test_dir):
                   batch_size=batch_size,
                   beam_size=beam_size,
                   model_path=model_path,
-                  use_gpu=False,
+                  use_gpu=use_gpu,
                   config_path=config_path,
                   saveto=saveto,
                   max_steps=20)
 
 
 if __name__ == '__main__':
+
+    parser = test_utils.build_test_argparser()
+    args = parser.parse_args()
 
     test_dir = "./tmp"
 
@@ -54,13 +79,13 @@ if __name__ == '__main__':
 
     INFO("=" * 20)
     INFO("Test DL4MT training...")
-    test_dl4mt_train(test_dir)
+    test_dl4mt_train(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
 
     INFO("=" * 20)
     INFO("Test DL4MT inference...")
-    test_dl4mt_inference(test_dir)
+    test_dl4mt_inference(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
 

@@ -64,7 +64,7 @@ def default_base_configs():
                 "beam_size": 5,
                 "alpha": 0.0,
                 "postprocess": False,
-                "sacrebleu_args": "-tok none -lc"
+                "sacrebleu_args": ""
             },
             "bleu_valid_warmup": 0,
             "early_stop_patience": 100000,
