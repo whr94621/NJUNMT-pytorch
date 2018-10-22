@@ -55,7 +55,8 @@ python -m src.bin.train \
     --config_path <your-config-path> \
     --log_path <your-log-path> \
     --saveto <path-to-save-checkpoints> \
-    --valid_path <path-to-save-validation-translation>
+    --valid_path <path-to-save-validation-translation> \
+    --use_gpu
 ```
 See detail options by running ```python -m src.bin.train --help```.
 
