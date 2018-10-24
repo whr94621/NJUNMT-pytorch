@@ -20,7 +20,7 @@ from src.optim import Optimizer
 from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
 from src.utils.common_utils import *
 from src.utils.logging import *
-from src.utils.ema import ExponentialMovingAverage
+from src.utils.moving_average import MovingAverage
 from src.utils.configs import default_configs, pretty_configs
 
 BOS = Vocabulary.BOS
@@ -471,18 +471,21 @@ def train(FLAGS):
     else:
         scheduler = None
 
-    # 6. build EMA
-    if training_configs['ema_decay'] > 0.0:
-        ema = ExponentialMovingAverage(named_params=nmt_model.named_parameters(), decay=training_configs['ema_decay'])
+    # 6. build moving average
+
+    if training_configs['moving_average_method'] is not None:
+        ma = MovingAverage(moving_average_method=training_configs['moving_average_method'],
+                           named_params=nmt_model.named_parameters(),
+                           alpha=training_configs['moving_average_alpha'])
     else:
-        ema = None
+        ma = None
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # Reload from latest checkpoint
     if FLAGS.reload:
         checkpoint_saver.load_latest(model=nmt_model, optim=optim, lr_scheduler=scheduler,
-                                     collections=model_collections)
+                                     collections=model_collections, ma=ma)
 
     # ================================================================================== #
     # Prepare training
@@ -550,8 +553,8 @@ def train(FLAGS):
                                        norm_by_words=training_configs["norm_by_words"])
             optim.step()
 
-            if ema is not None:
-                ema.step()
+            if ma is not None and eidx >= training_configs['moving_average_start_epoch']:
+                ma.step()
 
             # ================================================================================== #
             # Display some information
@@ -578,18 +581,17 @@ def train(FLAGS):
                 model_collections.add_to_collection("bad_count", bad_count)
 
                 if not is_early_stop:
-
                     checkpoint_saver.save(global_step=uidx, model=nmt_model, optim=optim, lr_scheduler=scheduler,
-                                          collections=model_collections, ema=ema)
+                                          collections=model_collections, ma=ma)
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
             if should_trigger_by_steps(global_step=uidx, n_epoch=eidx, every_n_step=training_configs['loss_valid_freq'],
                                        debug=FLAGS.debug):
 
-                if ema is not None:
+                if ma is not None:
                     origin_state_dict = deepcopy(nmt_model.state_dict())
-                    nmt_model.load_state_dict(ema.state_dict(), strict=False)
+                    nmt_model.load_state_dict(ma.export_ma_params(), strict=False)
 
                 valid_loss = loss_validation(model=nmt_model,
                                              critic=critic,
@@ -605,7 +607,7 @@ def train(FLAGS):
 
                 best_valid_loss = min_history_loss
 
-                if ema is not None:
+                if ma is not None:
                     nmt_model.load_state_dict(origin_state_dict)
                     del origin_state_dict
 
@@ -617,9 +619,9 @@ def train(FLAGS):
                                        min_step=training_configs['bleu_valid_warmup'],
                                        debug=FLAGS.debug):
 
-                if ema is not None:
+                if ma is not None:
                     origin_state_dict = deepcopy(nmt_model.state_dict())
-                    nmt_model.load_state_dict(ema.state_dict(), strict=False)
+                    nmt_model.load_state_dict(ma.export_ma_params(), strict=False)
 
                 valid_bleu = bleu_validation(uidx=uidx,
                                              valid_iterator=valid_iterator,
@@ -660,7 +662,7 @@ def train(FLAGS):
 
                 summary_writer.add_scalar("bad_count", bad_count, uidx)
 
-                if ema is not None:
+                if ma is not None:
                     nmt_model.load_state_dict(origin_state_dict)
                     del origin_state_dict
 

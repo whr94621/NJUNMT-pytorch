@@ -55,8 +55,6 @@ class Optimizer(object):
 
         self._count = 0
 
-        # TODO:
-        # pass external optimizer configs
         if optim_args is None:
             optim_args = {}
 

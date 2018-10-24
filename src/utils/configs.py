@@ -69,7 +69,11 @@ def default_base_configs():
             "bleu_valid_warmup": 0,
             "early_stop_patience": 100000,
             "bleu_valid_batch_size": 5,
-            "ema_decay": 0.0  # Close EMA as default.
+
+            # About moving average
+            "moving_average_method": None,  # sma | ema | None
+            "moving_average_alpha": 0.0,
+            "moving_average_start_epoch": 0
         }
     }
 
