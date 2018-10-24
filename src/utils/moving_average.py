@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import torch
 from collections import OrderedDict
 
 class MovingAverage(object):
@@ -64,8 +65,9 @@ class MovingAverage(object):
         else:
             alpha = self.alpha
 
-        for name, param in self.named_params.items():
-            self.named_params_ave[name].sub_(alpha * (self.named_params_ave[name] - param))
+        with torch.no_grad():
+            for name, param in self.named_params.items():
+                self.named_params_ave[name].sub_(alpha * (self.named_params_ave[name] - param))
 
     def export_ma_params(self):
 

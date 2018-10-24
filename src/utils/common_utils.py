@@ -258,6 +258,7 @@ class Saver(object):
             if self.savable(obj):
 
                 if name not in state_dict:
-                    print("Warning: {0} has no content saved!")
+                    print("Warning: {0} has no content saved!".format(name))
                 else:
+                    print("Loading {0}".format(name))
                     obj.load_state_dict(state_dict[name])
