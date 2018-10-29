@@ -493,6 +493,7 @@ def train(FLAGS):
     eidx = model_collections.get_collection("eidx", [0])[-1]
     uidx = model_collections.get_collection("uidx", [0])[-1]
     bad_count = model_collections.get_collection("bad_count", [0])[-1]
+    oom_count = model_collections.get_collection("oom_count", [0])[-1]
 
     summary_writer = SummaryWriter(log_dir=FLAGS.log_path)
 
@@ -540,18 +541,27 @@ def train(FLAGS):
 
             optim.zero_grad()
 
-            # Prepare data
-            for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
-                x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
+            try:
+                # Prepare data
+                for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
+                    x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
 
-                loss = compute_forward(model=nmt_model,
-                                       critic=critic,
-                                       seqs_x=x,
-                                       seqs_y=y,
-                                       eval=False,
-                                       normalization=n_samples_t,
-                                       norm_by_words=training_configs["norm_by_words"])
-            optim.step()
+                    loss = compute_forward(model=nmt_model,
+                                           critic=critic,
+                                           seqs_x=x,
+                                           seqs_y=y,
+                                           eval=False,
+                                           normalization=n_samples_t,
+                                           norm_by_words=training_configs["norm_by_words"])
+                optim.step()
+
+            except RuntimeError as e:
+                if 'out of memory' in str(e):
+                    print('| WARNING: ran out of memory, skipping batch')
+                    oom_count += 1
+                    optim.zero_grad()
+                else:
+                    raise e
 
             if ma is not None and eidx >= training_configs['moving_average_start_epoch']:
                 ma.step()
@@ -567,6 +577,7 @@ def train(FLAGS):
                 summary_writer.add_scalar("Speed(words/sec)", scalar_value=words_per_sec, global_step=uidx)
                 summary_writer.add_scalar("Speed(sents/sen)", scalar_value=sents_per_sec, global_step=uidx)
                 summary_writer.add_scalar("lrate", scalar_value=lrate, global_step=uidx)
+                summary_writer.add_scalar("oom_count", scalar_value=oom_count, global_step=uidx)
 
                 # Reset timer
                 timer.tic()
