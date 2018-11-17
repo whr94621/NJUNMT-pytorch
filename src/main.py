@@ -1,13 +1,13 @@
 import os
 import random
 import time
+from copy import deepcopy
 
 import numpy as np
 import torch
 import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-from copy import deepcopy
 
 from src.data.data_iterator import DataIterator
 from src.data.dataset import TextLineDataset, ZipDataset
@@ -19,9 +19,9 @@ from src.modules.criterions import NMTCriterion
 from src.optim import Optimizer
 from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
 from src.utils.common_utils import *
+from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
 from src.utils.moving_average import MovingAverage
-from src.utils.configs import default_configs, pretty_configs
 
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
@@ -522,11 +522,7 @@ def train(FLAGS):
 
             uidx += 1
 
-            if scheduler is None:
-                pass
-            elif optimizer_configs["schedule_method"] == "loss":
-                scheduler.step(metric=best_valid_loss)
-            else:
+            if optimizer_configs["schedule_method"] is not None and optimizer_configs["schedule_method"] != "loss":
                 scheduler.step(global_step=uidx)
 
             seqs_x, seqs_y = batch
@@ -621,6 +617,9 @@ def train(FLAGS):
                 if ma is not None:
                     nmt_model.load_state_dict(origin_state_dict)
                     del origin_state_dict
+
+                if optimizer_configs["schedule_method"] == "loss":
+                    scheduler.step(metric=best_valid_loss)
 
             # ================================================================================== #
             # BLEU Validation & Early Stop
