@@ -1,7 +1,7 @@
+import itertools
 import os
 import random
 import time
-from copy import deepcopy
 
 import numpy as np
 import torch
@@ -22,6 +22,13 @@ from src.utils.common_utils import *
 from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
 from src.utils.moving_average import MovingAverage
+
+try:
+    import horovod.torch as hvd
+    import src.distributed as dist
+except:
+    hvd = None
+    dist = None
 
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
@@ -76,6 +83,18 @@ def split_shard(*inputs, split_size=1):
 
             for beg, end in zip(_indices[:-1], _indices[1:]):
                 yield (inp[beg:end] for inp in inputs)
+
+
+def combine_from_all_shards(all_gathered_output):
+    """Combine all_gathered output split by ```split_shards_iterator```
+    """
+    output = []
+    for items in itertools.zip_longest(*all_gathered_output, fillvalue=None):
+        for item in items:
+            if item is not None:
+                output.append(item)
+
+    return output
 
 
 def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
@@ -164,7 +183,162 @@ def compute_forward(model,
         return loss.item()
 
 
-def loss_validation(model, critic, valid_iterator):
+def inference(valid_iterator,
+              model,
+              vocab_tgt: Vocabulary,
+              batch_size,
+              max_steps,
+              beam_size=5,
+              alpha=-1.0,
+              rank=0,
+              world_size=1,
+              using_numbering_iterator=True,
+              ):
+    model.eval()
+    trans_in_all_beams = [[] for _ in range(beam_size)]
+
+    # assert keep_n_beams <= beam_size
+
+    if using_numbering_iterator:
+        numbers = []
+
+    if rank == 0:
+        infer_progress_bar = tqdm(total=len(valid_iterator),
+                                  desc=' - (Infer)  ',
+                                  unit="sents")
+    else:
+        infer_progress_bar = None
+
+    valid_iter = valid_iterator.build_generator(batch_size=batch_size)
+
+    for batch in valid_iter:
+
+        seq_numbers = batch[0]
+
+        if using_numbering_iterator:
+            numbers += seq_numbers
+
+        seqs_x = batch[1]
+
+        if infer_progress_bar is not None:
+            infer_progress_bar.update(len(seqs_x) * world_size)
+
+        x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
+
+        with torch.no_grad():
+            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha)
+
+        word_ids = word_ids.cpu().numpy().tolist()
+
+        # Append result
+        for sent_t in word_ids:
+            for ii, sent_ in enumerate(sent_t):
+                sent_ = [vocab_tgt.id2token(wid) for wid in sent_ if wid != EOS and wid != PAD]
+                if len(sent_) > 0:
+                    trans_in_all_beams[ii].append(vocab_tgt.tokenizer.detokenize(sent_))
+                else:
+                    trans_in_all_beams[ii].append('%s' % vocab_tgt.id2token(EOS))
+
+    if infer_progress_bar is not None:
+        infer_progress_bar.close()
+
+    if world_size > 1:
+
+        if using_numbering_iterator:
+            numbers = combine_from_all_shards(dist.all_gather_py_with_shared_fs(numbers))
+
+        trans_in_all_beams = [combine_from_all_shards(dist.all_gather_py_with_shared_fs(trans)) for trans in
+                              trans_in_all_beams]
+
+    if using_numbering_iterator:
+        origin_order = np.argsort(numbers).tolist()
+
+        trans_in_all_beams = [[trans[ii] for ii in origin_order] for trans in trans_in_all_beams]
+
+    return trans_in_all_beams
+
+
+def ensemble_inference(valid_iterator,
+                       models,
+                       vocab_tgt: Vocabulary,
+                       batch_size,
+                       max_steps,
+                       beam_size=5,
+                       alpha=-1.0,
+                       rank=0,
+                       world_size=1,
+                       using_numbering_iterator=True
+                       ):
+    for model in models:
+        model.eval()
+
+    trans_in_all_beams = [[] for _ in range(beam_size)]
+
+    # assert keep_n_beams <= beam_size
+
+    if using_numbering_iterator:
+        numbers = []
+
+    if rank == 0:
+        infer_progress_bar = tqdm(total=len(valid_iterator),
+                                  desc=' - (Infer)  ',
+                                  unit="sents")
+    else:
+        infer_progress_bar = None
+
+    valid_iter = valid_iterator.build_generator(batch_size=batch_size)
+
+    for batch in valid_iter:
+
+        seq_numbers = batch[0]
+
+        if using_numbering_iterator:
+            numbers += seq_numbers
+
+        seqs_x = batch[1]
+
+        if infer_progress_bar is not None:
+            infer_progress_bar.update(len(seqs_x) * world_size)
+
+        x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
+
+        with torch.no_grad():
+            word_ids = ensemble_beam_search(
+                nmt_models=models,
+                beam_size=beam_size,
+                max_steps=max_steps,
+                src_seqs=x,
+                alpha=alpha
+            )
+
+        word_ids = word_ids.cpu().numpy().tolist()
+
+        # Append result
+        for sent_t in word_ids:
+            for ii, sent_ in enumerate(sent_t):
+                sent_ = [vocab_tgt.id2token(wid) for wid in sent_ if wid != EOS]
+                if len(sent_) > 0:
+                    trans_in_all_beams[ii].append(vocab_tgt.tokenizer.detokenize(sent_))
+                else:
+                    trans_in_all_beams[ii].append('%s' % vocab_tgt.id2token(EOS))
+
+    if infer_progress_bar is not None:
+        infer_progress_bar.close()
+
+    if world_size > 1:
+        if using_numbering_iterator:
+            numbers = dist.all_gather_py_with_shared_fs(numbers)
+
+        trans_in_all_beams = [combine_from_all_shards(trans) for trans in trans_in_all_beams]
+
+    if using_numbering_iterator:
+        origin_order = np.argsort(numbers).tolist()
+        trans_in_all_beams = [[trans[ii] for ii in origin_order] for trans in trans_in_all_beams]
+
+    return trans_in_all_beams
+
+
+def loss_evaluation(model, critic, valid_iterator, rank=0, world_size=1):
     """
     :type model: Transformer
 
@@ -199,10 +373,14 @@ def loss_validation(model, critic, valid_iterator):
 
         sum_loss += float(loss)
 
+    if world_size > 1:
+        sum_loss = dist.all_reduce_py(sum_loss)
+        n_sents = dist.all_reduce_py(n_sents)
+
     return float(sum_loss / n_sents)
 
 
-def bleu_validation(uidx,
+def bleu_evaluation(uidx,
                     valid_iterator,
                     model,
                     bleu_scorer,
@@ -211,66 +389,40 @@ def bleu_validation(uidx,
                     valid_dir="./valid",
                     max_steps=10,
                     beam_size=5,
-                    alpha=-1.0
+                    alpha=-1.0,
+                    rank=0,
+                    world_size=1,
+                    using_numbering_iterator=True
                     ):
-    model.eval()
+    translations_in_all_beams = inference(
+        valid_iterator=valid_iterator,
+        model=model,
+        vocab_tgt=vocab_tgt,
+        batch_size=batch_size,
+        max_steps=max_steps,
+        beam_size=beam_size,
+        alpha=alpha,
+        rank=rank,
+        world_size=world_size,
+        using_numbering_iterator=using_numbering_iterator
+    )
 
-    numbers = []
-    trans = []
+    if rank == 0:
+        if not os.path.exists(valid_dir):
+            os.mkdir(valid_dir)
 
-    infer_progress_bar = tqdm(total=len(valid_iterator),
-                              desc=' - (Infer)  ',
-                              unit="sents")
+        hyp_path = os.path.join(valid_dir, 'trans.iter{0}.txt'.format(uidx))
 
-    valid_iter = valid_iterator.build_generator(batch_size=batch_size)
+        with open(hyp_path, 'w') as f:
+            for line in translations_in_all_beams[0]:
+                f.write('%s\n' % line)
+        with open(hyp_path) as f:
+            bleu_v = bleu_scorer.corpus_bleu(f)
+    else:
+        bleu_v = 0.0
 
-    for batch in valid_iter:
-
-        seq_nums = batch[0]
-        numbers += seq_nums
-
-        seqs_x = batch[1]
-
-        infer_progress_bar.update(len(seqs_x))
-
-        x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
-
-        with torch.no_grad():
-            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha)
-
-        word_ids = word_ids.cpu().numpy().tolist()
-
-        # Append result
-        for sent_t in word_ids:
-            sent_t = [[wid for wid in line if wid != PAD] for line in sent_t]
-            x_tokens = []
-
-            for wid in sent_t[0]:
-                if wid == EOS:
-                    break
-                x_tokens.append(vocab_tgt.id2token(wid))
-
-            if len(x_tokens) > 0:
-                trans.append(vocab_tgt.tokenizer.detokenize(x_tokens))
-            else:
-                trans.append('%s' % vocab_tgt.id2token(EOS))
-
-    origin_order = np.argsort(numbers).tolist()
-    trans = [trans[ii] for ii in origin_order]
-
-    infer_progress_bar.close()
-
-    if not os.path.exists(valid_dir):
-        os.mkdir(valid_dir)
-
-    hyp_path = os.path.join(valid_dir, 'trans.iter{0}.txt'.format(uidx))
-
-    with open(hyp_path, 'w') as f:
-        for line in trans:
-            f.write('%s\n' % line)
-
-    with open(hyp_path) as f:
-        bleu_v = bleu_scorer.corpus_bleu(f)
+    if world_size > 1:
+        bleu_v = dist.broadcast_py(bleu_v, root_rank=0)
 
     return bleu_v
 
@@ -311,9 +463,9 @@ def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None)
         INFO("Pretrained model loaded.")
 
 
-def train(FLAGS):
+def train(flags):
     """
-    FLAGS:
+    flags:
         saveto: str
         reload: store_true
         config_path: str
@@ -322,17 +474,44 @@ def train(FLAGS):
         log_path: str
     """
 
-    # write log of training to file.
-    write_log_to_file(os.path.join(FLAGS.log_path, "%s.log" % time.strftime("%Y%m%d-%H%M%S")))
+    # ================================================================================== #
+    # Initialization for training on different devices
+    # - CPU/GPU
+    # - Single/Distributed
+    GlobalNames.USE_GPU = flags.use_gpu
 
-    GlobalNames.USE_GPU = FLAGS.use_gpu
+    if flags.multi_gpu:
+
+        if hvd is None or dist is None:
+            ERROR("Distributed training is disable. Please check the installation of Horovod.")
+
+        dist.init(flags.shared_dir)
+        world_size = hvd.size()
+        rank = hvd.rank()
+        local_rank = hvd.local_rank()
+    else:
+        world_size = 1
+        rank = 0
+        local_rank = 0
 
     if GlobalNames.USE_GPU:
-        CURRENT_DEVICE = "cpu"
+        torch.cuda.set_device(local_rank)
+        CURRENT_DEVICE = "cuda:{0}".format(local_rank)
     else:
-        CURRENT_DEVICE = "cuda:0"
+        CURRENT_DEVICE = "cpu"
 
-    config_path = os.path.abspath(FLAGS.config_path)
+    # If not root_rank, close logging
+    # else write log of training to file.
+    if rank == 0:
+        write_log_to_file(os.path.join(flags.log_path, "%s.log" % time.strftime("%Y%m%d-%H%M%S")))
+    else:
+        close_logging()
+
+    # ================================================================================== #
+    # Parsing configuration files
+
+    config_path = os.path.abspath(flags.config_path)
+
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
 
@@ -349,8 +528,6 @@ def train(FLAGS):
 
     set_seed(GlobalNames.SEED)
 
-    best_model_prefix = os.path.join(FLAGS.saveto, FLAGS.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
-
     timer = Timer()
 
     # ================================================================================== #
@@ -363,8 +540,7 @@ def train(FLAGS):
     vocab_src = Vocabulary(**data_configs["vocabularies"][0])
     vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
 
-    train_batch_size = training_configs["batch_size"] * max(1, training_configs["update_cycle"])
-    train_buffer_size = training_configs["buffer_size"] * max(1, training_configs["update_cycle"])
+    actual_buffer_size = training_configs["buffer_size"] * max(1, training_configs["update_cycle"])
 
     train_bitext_dataset = ZipDataset(
         TextLineDataset(data_path=data_configs['train_data'][0],
@@ -374,8 +550,7 @@ def train(FLAGS):
         TextLineDataset(data_path=data_configs['train_data'][1],
                         vocabulary=vocab_tgt,
                         max_len=data_configs['max_len'][1],
-                        ),
-        shuffle=training_configs['shuffle']
+                        )
     )
 
     valid_bitext_dataset = ZipDataset(
@@ -388,14 +563,17 @@ def train(FLAGS):
     )
 
     training_iterator = DataIterator(dataset=train_bitext_dataset,
-                                     batch_size=train_batch_size,
+                                     batch_size=training_configs["batch_size"],
                                      use_bucket=training_configs['use_bucket'],
-                                     buffer_size=train_buffer_size,
-                                     batching_func=training_configs['batching_key'])
+                                     buffer_size=actual_buffer_size,
+                                     batching_func=training_configs['batching_key'],
+                                     world_size=world_size,
+                                     rank=rank)
 
     valid_iterator = DataIterator(dataset=valid_bitext_dataset,
                                   batch_size=training_configs['valid_batch_size'],
-                                  use_bucket=True, buffer_size=100000, numbering=True)
+                                  use_bucket=True, buffer_size=100000, numbering=True,
+                                  world_size=world_size, rank=rank)
 
     bleu_scorer = SacreBLEUScorer(reference_path=data_configs["bleu_valid_reference"],
                                   num_refs=data_configs["num_refs"],
@@ -421,9 +599,11 @@ def train(FLAGS):
 
     # 0. Initial
     model_collections = Collections()
-    checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(FLAGS.saveto, FLAGS.model_name)),
+
+    checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(flags.saveto, flags.model_name)),
                              num_max_keeping=training_configs['num_kept_checkpoints']
                              )
+    best_model_prefix = os.path.join(flags.saveto, flags.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
     best_model_saver = Saver(save_prefix=best_model_prefix, num_max_keeping=training_configs['num_kept_best_model'])
 
     # 1. Build Model & Criterion
@@ -432,11 +612,6 @@ def train(FLAGS):
     nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
                             n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
-
-    params_total = sum([p.numel() for n, p in nmt_model.named_parameters()])
-    params_with_embedding = sum([p.numel() for n, p in nmt_model.named_parameters() if n.find('embedding') == -1])
-    INFO('Total parameters: {}'.format(params_total))
-    INFO('Total parameters (excluding word embeddings): {}'.format(params_with_embedding))
 
     critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
 
@@ -449,16 +624,20 @@ def train(FLAGS):
         critic = critic.cuda()
 
     # 3. Load pretrained model if needed
-    load_pretrained_model(nmt_model, FLAGS.pretrain_path, exclude_prefix=None, device=CURRENT_DEVICE)
+    load_pretrained_model(nmt_model, flags.pretrain_path, exclude_prefix=None, device=CURRENT_DEVICE)
 
     # 4. Build optimizer
     INFO('Building Optimizer...')
+
     optim = Optimizer(name=optimizer_configs['optimizer'],
                       model=nmt_model,
                       lr=lrate,
                       grad_clip=optimizer_configs['grad_clip'],
-                      optim_args=optimizer_configs['optimizer_params']
+                      optim_args=optimizer_configs['optimizer_params'],
+                      distributed=True if world_size > 1 else False,
+                      update_cycle=training_configs['update_cycle']
                       )
+
     # 5. Build scheduler for optimizer if needed
     if optimizer_configs['schedule_method'] is not None:
 
@@ -488,24 +667,34 @@ def train(FLAGS):
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # Reload from latest checkpoint
-    if FLAGS.reload:
+    if flags.reload:
         checkpoint_saver.load_latest(model=nmt_model, optim=optim, lr_scheduler=scheduler,
                                      collections=model_collections, ma=ma)
+
+    # broadcast parameters and optimizer states
+    if world_size > 1:
+        INFO("Broadcasting model parameters...")
+        hvd.broadcast_parameters(params=nmt_model.state_dict(), root_rank=0)
+        INFO("Broadcasting optimizer states...")
+        hvd.broadcast_optimizer_state(optimizer=optim.optim, root_rank=0)
+        INFO('Done.')
 
     # ================================================================================== #
     # Prepare training
 
     eidx = model_collections.get_collection("eidx", [0])[-1]
-    uidx = model_collections.get_collection("uidx", [0])[-1]
+    uidx = model_collections.get_collection("uidx", [1])[-1]
     bad_count = model_collections.get_collection("bad_count", [0])[-1]
     oom_count = model_collections.get_collection("oom_count", [0])[-1]
+    cum_n_samples = 0
+    cum_n_words = 0
+    update_cycle = training_configs['update_cycle']
+    grad_denom = 0
 
-    summary_writer = SummaryWriter(log_dir=FLAGS.log_path)
-
-    cum_samples = 0
-    cum_words = 0
-    valid_loss = best_valid_loss = float('inf') # Max Float
-    saving_files = []
+    if rank == 0:
+        summary_writer = SummaryWriter(log_dir=flags.log_path)
+    else:
+        summary_writer = None
 
     # Timer for computing speed
     timer_for_speed = Timer()
@@ -515,121 +704,134 @@ def train(FLAGS):
 
     while True:
 
-        summary_writer.add_scalar("Epoch", (eidx + 1), uidx)
+        if summary_writer is not None:
+            summary_writer.add_scalar("Epoch", (eidx + 1), uidx)
 
         # Build iterator and progress bar
         training_iter = training_iterator.build_generator()
-        training_progress_bar = tqdm(desc=' - (Epc {}, Upd {}) '.format(eidx, uidx),
-                                     total=len(training_iterator),
-                                     unit="sents"
-                                     )
+
+        if rank == 0:
+            training_progress_bar = tqdm(desc='  - (Epoch %d)   ' % eidx,
+                                         total=len(training_iterator),
+                                         unit="sents"
+                                         )
+        else:
+            training_progress_bar = None
+
         for batch in training_iter:
-
-            uidx += 1
-
-            if optimizer_configs["schedule_method"] is not None and optimizer_configs["schedule_method"] != "loss":
-                scheduler.step(global_step=uidx)
 
             seqs_x, seqs_y = batch
 
-            n_samples_t = len(seqs_x)
-            n_words_t = sum(len(s) for s in seqs_y)
+            batch_size = len(seqs_x)
 
-            cum_samples += n_samples_t
-            cum_words += n_words_t
+            cum_n_samples += batch_size
+            cum_n_words += sum(len(s) for s in seqs_y)
 
-            train_loss = 0.
-            optim.zero_grad()
             try:
                 # Prepare data
-                for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
-                    x, y = prepare_data(seqs_x_t, seqs_y_t, cuda=GlobalNames.USE_GPU)
+                x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
-                    loss = compute_forward(model=nmt_model,
-                                           critic=critic,
-                                           seqs_x=x,
-                                           seqs_y=y,
-                                           eval=False,
-                                           normalization=n_samples_t,
-                                           norm_by_words=training_configs["norm_by_words"])
-                    train_loss += loss / y.size(1)
-                optim.step()
+                loss = compute_forward(model=nmt_model,
+                                       critic=critic,
+                                       seqs_x=x,
+                                       seqs_y=y,
+                                       eval=False,
+                                       normalization=1.0,
+                                       norm_by_words=training_configs["norm_by_words"])
+
+                update_cycle -= 1
+                grad_denom += batch_size
 
             except RuntimeError as e:
                 if 'out of memory' in str(e):
                     print('| WARNING: ran out of memory, skipping batch')
                     oom_count += 1
-                    optim.zero_grad()
                 else:
                     raise e
 
-            if ma is not None and eidx >= training_configs['moving_average_start_epoch']:
-                ma.step()
+            # When update_cycle becomes 0, it means end of one batch. Several things will be done:
+            # - update parameters
+            # - reset update_cycle and grad_denom, update uidx
+            # - learning rate scheduling
+            # - update moving average
 
-            training_progress_bar.update(n_samples_t)
-            training_progress_bar.set_description(' - (Epc {}, Upd {}) '.format(eidx, uidx))
-            training_progress_bar.set_postfix_str(
-                'TrainLoss: {:.2f}, ValidLoss(best): {:.2f} ({:.2f})'.format(train_loss, valid_loss, best_valid_loss))
-            summary_writer.add_scalar("train_loss", scalar_value=train_loss, global_step=uidx)
+            if update_cycle == 0:
+
+                # 1. update parameters
+                if world_size > 1:
+                    grad_denom = dist.all_reduce_py(grad_denom)
+
+                optim.step(denom=grad_denom)
+                optim.zero_grad()
+
+                if training_progress_bar is not None:
+                    training_progress_bar.update(grad_denom)
+
+                # 2. reset update_cycle and grad_denom, update uidx
+                update_cycle = training_configs['update_cycle']
+                grad_denom = 0
+                uidx += 1
+
+                # 3. learning rate scheduling
+                if scheduler is not None and optimizer_configs["schedule_method"] != "loss":
+                    scheduler.step(global_step=uidx)
+
+                # 4. update moving average
+                if ma is not None and eidx >= training_configs['moving_average_start_epoch']:
+                    ma.step()
+            else:
+                continue
 
             # ================================================================================== #
             # Display some information
             if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['disp_freq']):
+
+                if world_size > 1:
+                    cum_n_words = dist.all_reduce_py(cum_n_words)
+                    cum_n_samples = dist.all_reduce_py(cum_n_samples)
+
                 # words per second and sents per second
-                words_per_sec = cum_words / (timer.toc(return_seconds=True))
-                sents_per_sec = cum_samples / (timer.toc(return_seconds=True))
+                words_per_sec = cum_n_words / (timer.toc(return_seconds=True))
+                sents_per_sec = cum_n_samples / (timer.toc(return_seconds=True))
                 lrate = list(optim.get_lrate())[0]
 
-                summary_writer.add_scalar("Speed(words/sec)", scalar_value=words_per_sec, global_step=uidx)
-                summary_writer.add_scalar("Speed(sents/sen)", scalar_value=sents_per_sec, global_step=uidx)
-                summary_writer.add_scalar("lrate", scalar_value=lrate, global_step=uidx)
-                summary_writer.add_scalar("oom_count", scalar_value=oom_count, global_step=uidx)
+                if summary_writer is not None:
+                    summary_writer.add_scalar("Speed(words/sec)", scalar_value=words_per_sec, global_step=uidx)
+                    summary_writer.add_scalar("Speed(sents/sen)", scalar_value=sents_per_sec, global_step=uidx)
+                    summary_writer.add_scalar("lrate", scalar_value=lrate, global_step=uidx)
+                    summary_writer.add_scalar("oom_count", scalar_value=oom_count, global_step=uidx)
 
                 # Reset timer
                 timer.tic()
-                cum_words = 0
-                cum_samples = 0
-
-            # ================================================================================== #
-            # Saving checkpoints
-            if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['save_freq'], debug=FLAGS.debug):
-                model_collections.add_to_collection("uidx", uidx)
-                model_collections.add_to_collection("eidx", eidx)
-                model_collections.add_to_collection("bad_count", bad_count)
-
-                if not is_early_stop:
-                    checkpoint_saver.save(global_step=uidx, model=nmt_model, optim=optim, lr_scheduler=scheduler,
-                                          collections=model_collections, ma=ma)
+                cum_n_words = 0
+                cum_n_samples = 0
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing
             if should_trigger_by_steps(global_step=uidx, n_epoch=eidx, every_n_step=training_configs['loss_valid_freq'],
-                                       debug=FLAGS.debug):
+                                       debug=flags.debug):
+                with cache_parameters(nmt_model):
 
-                if ma is not None:
-                    origin_state_dict = deepcopy(nmt_model.state_dict())
-                    nmt_model.load_state_dict(ma.export_ma_params(), strict=False)
+                    if ma is not None:
+                        nmt_model.load_state_dict(ma.export_ma_params(), strict=False)
 
-                valid_loss = loss_validation(model=nmt_model,
-                                             critic=critic,
-                                             valid_iterator=valid_iterator,
-                                             )
+                    valid_loss = loss_evaluation(model=nmt_model,
+                                                 critic=critic,
+                                                 valid_iterator=valid_iterator,
+                                                 rank=rank,
+                                                 world_size=world_size
+                                                 )
+
+                if scheduler is not None and optimizer_configs["schedule_method"] == "loss":
+                    scheduler.step(metric=valid_loss)
 
                 model_collections.add_to_collection("history_losses", valid_loss)
 
                 min_history_loss = np.array(model_collections.get_collection("history_losses")).min()
 
-                summary_writer.add_scalar("loss", valid_loss, global_step=uidx)
-                summary_writer.add_scalar("best_loss", min_history_loss, global_step=uidx)
-
-                best_valid_loss = min_history_loss
-
-                if ma is not None:
-                    nmt_model.load_state_dict(origin_state_dict)
-                    del origin_state_dict
-
-                if optimizer_configs["schedule_method"] == "loss":
-                    scheduler.step(metric=best_valid_loss)
+                if summary_writer is not None:
+                    summary_writer.add_scalar("loss", valid_loss, global_step=uidx)
+                    summary_writer.add_scalar("best_loss", min_history_loss, global_step=uidx)
 
             # ================================================================================== #
             # BLEU Validation & Early Stop
@@ -637,41 +839,46 @@ def train(FLAGS):
             if should_trigger_by_steps(global_step=uidx, n_epoch=eidx,
                                        every_n_step=training_configs['bleu_valid_freq'],
                                        min_step=training_configs['bleu_valid_warmup'],
-                                       debug=FLAGS.debug):
+                                       debug=flags.debug):
 
-                if ma is not None:
-                    origin_state_dict = deepcopy(nmt_model.state_dict())
-                    nmt_model.load_state_dict(ma.export_ma_params(), strict=False)
+                with cache_parameters(nmt_model):
 
-                valid_bleu = bleu_validation(uidx=uidx,
-                                             valid_iterator=valid_iterator,
-                                             batch_size=training_configs["bleu_valid_batch_size"],
-                                             model=nmt_model,
-                                             bleu_scorer=bleu_scorer,
-                                             vocab_tgt=vocab_tgt,
-                                             valid_dir=FLAGS.valid_path,
-                                             max_steps=training_configs["bleu_valid_configs"]["max_steps"],
-                                             beam_size=training_configs["bleu_valid_configs"]["beam_size"],
-                                             alpha=training_configs["bleu_valid_configs"]["alpha"]
-                                             )
+                    if ma is not None:
+                        nmt_model.load_state_dict(ma.export_ma_params(), strict=False)
+
+                    valid_bleu = bleu_evaluation(uidx=uidx,
+                                                 valid_iterator=valid_iterator,
+                                                 batch_size=training_configs["bleu_valid_batch_size"],
+                                                 model=nmt_model,
+                                                 bleu_scorer=bleu_scorer,
+                                                 vocab_tgt=vocab_tgt,
+                                                 valid_dir=flags.valid_path,
+                                                 max_steps=training_configs["bleu_valid_configs"]["max_steps"],
+                                                 beam_size=training_configs["bleu_valid_configs"]["beam_size"],
+                                                 alpha=training_configs["bleu_valid_configs"]["alpha"],
+                                                 world_size=world_size,
+                                                 rank=rank,
+                                                 )
 
                 model_collections.add_to_collection(key="history_bleus", value=valid_bleu)
 
                 best_valid_bleu = float(np.array(model_collections.get_collection("history_bleus")).max())
 
-                summary_writer.add_scalar("bleu", valid_bleu, uidx)
-                summary_writer.add_scalar("best_bleu", best_valid_bleu, uidx)
+                if summary_writer is not None:
+                    summary_writer.add_scalar("bleu", valid_bleu, uidx)
+                    summary_writer.add_scalar("best_bleu", best_valid_bleu, uidx)
 
                 # If model get new best valid bleu score
                 if valid_bleu >= best_valid_bleu:
                     bad_count = 0
 
                     if is_early_stop is False:
-                        # 1. save the best model
-                        torch.save(nmt_model.state_dict(), best_model_prefix + ".final")
+                        if rank == 0:
+                            # 1. save the best model
+                            torch.save(nmt_model.state_dict(), best_model_prefix + ".final")
 
-                        # 2. record all several best models
-                        best_model_saver.save(global_step=uidx, model=nmt_model)
+                            # 2. record all several best models
+                            best_model_saver.save(global_step=uidx, model=nmt_model)
                 else:
                     bad_count += 1
 
@@ -680,27 +887,59 @@ def train(FLAGS):
                         is_early_stop = True
                         WARN("Early Stop!")
 
-                summary_writer.add_scalar("bad_count", bad_count, uidx)
-
-                if ma is not None:
-                    nmt_model.load_state_dict(origin_state_dict)
-                    del origin_state_dict
+                if summary_writer is not None:
+                    summary_writer.add_scalar("bad_count", bad_count, uidx)
 
                 INFO("{0} Loss: {1:.2f} BLEU: {2:.2f} lrate: {3:6f} patience: {4}".format(
                     uidx, valid_loss, valid_bleu, lrate, bad_count
                 ))
 
-        training_progress_bar.close()
+                # ================================================================================== #
+                # Saving checkpoints
+                if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['save_freq'], debug=flags.debug):
+                    model_collections.add_to_collection("uidx", uidx)
+                    model_collections.add_to_collection("eidx", eidx)
+                    model_collections.add_to_collection("bad_count", bad_count)
+
+                    if not is_early_stop:
+                        if rank == 0:
+                            checkpoint_saver.save(global_step=uidx,
+                                                  model=nmt_model,
+                                                  optim=optim,
+                                                  lr_scheduler=scheduler,
+                                                  collections=model_collections,
+                                                  ma=ma)
+
+        if training_progress_bar is not None:
+            training_progress_bar.close()
 
         eidx += 1
         if eidx > training_configs["max_epochs"]:
             break
 
 
-def translate(FLAGS):
-    GlobalNames.USE_GPU = FLAGS.use_gpu
+def translate(flags):
+    GlobalNames.USE_GPU = flags.use_gpu
 
-    config_path = os.path.abspath(FLAGS.config_path)
+    if flags.multi_gpu:
+
+        if hvd is None or dist is None:
+            ERROR("Distributed training is disable. Please check the installation of Horovod.")
+
+        dist.init(flags.shared_dir)
+        world_size = hvd.size()
+        rank = hvd.rank()
+
+        if GlobalNames.USE_GPU:
+            torch.cuda.set_device(hvd.local_rank())
+    else:
+        world_size = 1
+        rank = 0
+
+    if rank != 0:
+        close_logging()
+
+    config_path = os.path.abspath(flags.config_path)
 
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
@@ -719,12 +958,17 @@ def translate(FLAGS):
     vocab_src = Vocabulary(**data_configs["vocabularies"][0])
     vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
 
-    valid_dataset = TextLineDataset(data_path=FLAGS.source_path,
+    valid_dataset = TextLineDataset(data_path=flags.source_path,
                                     vocabulary=vocab_src)
 
     valid_iterator = DataIterator(dataset=valid_dataset,
-                                  batch_size=FLAGS.batch_size,
-                                  use_bucket=True, buffer_size=100000, numbering=True)
+                                  batch_size=flags.batch_size,
+                                  use_bucket=True,
+                                  buffer_size=100000,
+                                  numbering=True,
+                                  world_size=world_size,
+                                  rank=rank
+                                  )
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -740,7 +984,7 @@ def translate(FLAGS):
     INFO('Reloading model parameters...')
     timer.tic()
 
-    params = load_model_parameters(FLAGS.model_path, map_location="cpu")
+    params = load_model_parameters(flags.model_path, map_location="cpu")
 
     nmt_model.load_state_dict(params)
 
@@ -750,79 +994,58 @@ def translate(FLAGS):
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     INFO('Begin...')
-
-    result_numbers = []
-    result = []
-    n_words = 0
-
     timer.tic()
 
-    infer_progress_bar = tqdm(total=len(valid_iterator),
-                              desc=' - (Infer)  ',
-                              unit="sents")
+    translations_in_all_beams = inference(
+        valid_iterator=valid_iterator,
+        model=nmt_model,
+        vocab_tgt=vocab_tgt,
+        batch_size=flags.batch_size,
+        max_steps=flags.max_steps,
+        beam_size=flags.beam_size,
+        alpha=flags.alpha,
+        rank=rank,
+        world_size=world_size,
+        using_numbering_iterator=True
+    )
 
-    valid_iter = valid_iterator.build_generator()
-    for batch in valid_iter:
+    acc_time = timer.toc(return_seconds=True)
+    acc_num_tokens = sum([len(line.strip().split()) for line in translations_in_all_beams[0]])
 
-        numbers, seqs_x = batch
+    INFO('Done. Speed: {0:.2f} words/sec'.format(acc_num_tokens / acc_time))
 
-        batch_size_t = len(seqs_x)
+    if rank == 0:
+        keep_n = flags.beam_size if flags.keep_n <= 0 else min(flags.beam_size, flags.keep_n)
+        outputs = ['%s.%d' % (flags.saveto, i) for i in range(keep_n)]
 
-        x = prepare_data(seqs_x=seqs_x, cuda=GlobalNames.USE_GPU)
-
-        with torch.no_grad():
-            word_ids = beam_search(nmt_model=nmt_model, beam_size=FLAGS.beam_size, max_steps=FLAGS.max_steps,
-                                   src_seqs=x, alpha=FLAGS.alpha)
-
-        word_ids = word_ids.cpu().numpy().tolist()
-
-        # Append result
-        for sent_t in word_ids:
-            sent_t = [[wid for wid in line if wid != PAD] for line in sent_t]
-            result.append(sent_t)
-
-            n_words += len(sent_t[0])
-
-        result_numbers += numbers
-
-        infer_progress_bar.update(batch_size_t)
-
-    infer_progress_bar.close()
-
-    INFO('Done. Speed: {0:.2f} words/sec'.format(n_words / (timer.toc(return_seconds=True))))
-
-    translation = []
-    for sent in result:
-        samples = []
-        for trans in sent:
-            sample = []
-            for w in trans:
-                if w == vocab_tgt.EOS:
-                    break
-                sample.append(vocab_tgt.id2token(w))
-            samples.append(vocab_tgt.tokenizer.detokenize(sample))
-        translation.append(samples)
-
-    # resume the ordering
-    origin_order = np.argsort(result_numbers).tolist()
-    translation = [translation[ii] for ii in origin_order]
-
-    keep_n = FLAGS.beam_size if FLAGS.keep_n <= 0 else min(FLAGS.beam_size, FLAGS.keep_n)
-    outputs = ['%s.%d' % (FLAGS.saveto, i) for i in range(keep_n)]
-
-    with batch_open(outputs, 'w') as handles:
-        for trans in translation:
-            for i in range(keep_n):
-                if i < len(trans):
-                    handles[i].write('%s\n' % trans[i])
-                else:
-                    handles[i].write('%s\n' % 'eos')
+        with batch_open(outputs, 'w') as handles:
+            for ii in range(keep_n):
+                for trans in translations_in_all_beams[ii]:
+                    handles[ii].write('%s\n' % trans)
 
 
-def ensemble_translate(FLAGS):
-    GlobalNames.USE_GPU = FLAGS.use_gpu
+def ensemble_translate(flags):
+    GlobalNames.USE_GPU = flags.use_gpu
 
-    config_path = os.path.abspath(FLAGS.config_path)
+    if flags.multi_gpu:
+
+        if hvd is None or dist is None:
+            ERROR("Distributed training is disable. Please check the installation of Horovod.")
+
+        dist.init(flags.shared_dir)
+        world_size = hvd.size()
+        rank = hvd.rank()
+
+        if GlobalNames.USE_GPU:
+            torch.cuda.set_device(hvd.local_rank())
+    else:
+        world_size = 1
+        rank = 0
+
+    if rank != 0:
+        close_logging()
+
+    config_path = os.path.abspath(flags.config_path)
 
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
@@ -841,12 +1064,17 @@ def ensemble_translate(FLAGS):
     vocab_src = Vocabulary(**data_configs["vocabularies"][0])
     vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
 
-    valid_dataset = TextLineDataset(data_path=FLAGS.source_path,
+    valid_dataset = TextLineDataset(data_path=flags.source_path,
                                     vocabulary=vocab_src)
 
     valid_iterator = DataIterator(dataset=valid_dataset,
-                                  batch_size=FLAGS.batch_size,
-                                  use_bucket=True, buffer_size=100000, numbering=True)
+                                  batch_size=flags.batch_size,
+                                  use_bucket=True,
+                                  buffer_size=100000,
+                                  numbering=True,
+                                  world_size=world_size,
+                                  rank=rank
+                                  )
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -857,7 +1085,7 @@ def ensemble_translate(FLAGS):
 
     nmt_models = []
 
-    model_path = FLAGS.model_path
+    model_path = flags.model_path
 
     for ii in range(len(model_path)):
 
@@ -881,67 +1109,31 @@ def ensemble_translate(FLAGS):
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     INFO('Begin...')
-    result_numbers = []
-    result = []
-    n_words = 0
-
     timer.tic()
 
-    infer_progress_bar = tqdm(total=len(valid_iterator),
-                              desc=' - (Infer)  ',
-                              unit="sents")
+    translations_in_all_beams = ensemble_inference(
+        valid_iterator=valid_iterator,
+        models=nmt_models,
+        vocab_tgt=vocab_tgt,
+        batch_size=flags.batch_size,
+        max_steps=flags.max_steps,
+        beam_size=flags.beam_size,
+        alpha=flags.alpha,
+        rank=rank,
+        world_size=world_size,
+        using_numbering_iterator=True
+    )
 
-    valid_iter = valid_iterator.build_generator()
-    for batch in valid_iter:
+    acc_time = timer.toc(return_seconds=True)
+    acc_num_tokens = sum([len(line.strip().split()) for line in translations_in_all_beams[0]])
 
-        numbers, seqs_x = batch
+    INFO('Done. Speed: {0:.2f} words/sec'.format(acc_num_tokens / acc_time))
 
-        batch_size_t = len(seqs_x)
+    if rank == 0:
+        keep_n = flags.beam_size if flags.keep_n <= 0 else min(flags.beam_size, flags.keep_n)
+        outputs = ['%s.%d' % (flags.saveto, i) for i in range(keep_n)]
 
-        x = prepare_data(seqs_x=seqs_x, cuda=GlobalNames.USE_GPU)
-
-        with torch.no_grad():
-            word_ids = ensemble_beam_search(nmt_models=nmt_models, beam_size=FLAGS.beam_size, max_steps=FLAGS.max_steps,
-                                            src_seqs=x, alpha=FLAGS.alpha)
-
-        word_ids = word_ids.cpu().numpy().tolist()
-
-        # Append result
-        for sent_t in word_ids:
-            sent_t = [[wid for wid in line if wid != PAD] for line in sent_t]
-            result.append(sent_t)
-
-            n_words += len(sent_t[0])
-
-        infer_progress_bar.update(batch_size_t)
-
-    infer_progress_bar.close()
-
-    INFO('Done. Speed: {0:.2f} words/sec'.format(n_words / (timer.toc(return_seconds=True))))
-
-    translation = []
-    for sent in result:
-        samples = []
-        for trans in sent:
-            sample = []
-            for w in trans:
-                if w == vocab_tgt.EOS:
-                    break
-                sample.append(vocab_tgt.id2token(w))
-            samples.append(vocab_tgt.tokenizer.detokenize(sample))
-        translation.append(samples)
-
-    # resume the ordering
-    origin_order = np.argsort(result_numbers).tolist()
-    translation = [translation[ii] for ii in origin_order]
-
-    keep_n = FLAGS.beam_size if FLAGS.keep_n <= 0 else min(FLAGS.beam_size, FLAGS.keep_n)
-    outputs = ['%s.%d' % (FLAGS.saveto, i) for i in range(keep_n)]
-
-    with batch_open(outputs, 'w') as handles:
-        for trans in translation:
-            for i in range(keep_n):
-                if i < len(trans):
-                    handles[i].write('%s\n' % trans[i])
-                else:
-                    handles[i].write('%s\n' % 'eos')
+        with batch_open(outputs, 'w') as handles:
+            for ii in range(keep_n):
+                for trans in translations_in_all_beams[ii]:
+                    handles[ii].write('%s\n' % trans)

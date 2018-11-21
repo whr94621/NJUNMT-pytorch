@@ -1,4 +1,5 @@
 import argparse
+
 from src.main import train
 from . import auto_mkdir
 
@@ -29,6 +30,12 @@ parser.add_argument('--pretrain_path', type=str, default="", help="The path for 
 
 parser.add_argument("--valid_path", type=str, default="./valid",
                     help="""Path to save translation for bleu evaulation. Default is ./valid.""")
+
+parser.add_argument("--multi_gpu", action="store_true",
+                    help="""Running on multiple GPUs.""")
+
+parser.add_argument("--shared_dir", type=str, default=None,
+                    help="""Shared directory across nodes. Default is '/tmp'""")
 
 
 def run(**kwargs):

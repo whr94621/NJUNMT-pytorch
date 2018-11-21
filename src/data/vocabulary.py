@@ -1,4 +1,5 @@
 import json
+
 from .tokenizer import Tokenizer, _Tokenizer
 
 
@@ -17,13 +18,7 @@ class Vocabulary(object):
         self._load_vocab(self.dict_path)
         self._id2token = dict([(ii[0], ww) for ww, ii in self._token2id_feq.items()])
 
-    @property
-    def max_n_words(self):
-
-        if self._max_n_words == -1:
-            return len(self._token2id_feq)
-        else:
-            return self._max_n_words
+        self.max_n_words = len(self._token2id_feq) if self._max_n_words == -1 else self._max_n_words
 
     def _init_dict(self):
 
@@ -85,6 +80,7 @@ class Vocabulary(object):
         tokens = [self.id2token(ii) for ii in indices]
 
         return self.tokenizer.detokenize(tokens)
+
 
 PAD = Vocabulary.PAD
 EOS = Vocabulary.EOS

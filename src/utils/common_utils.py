@@ -1,9 +1,12 @@
-import os
-import torch
-import time
 import contextlib
 import copy
+import os
+import time
+from collections import OrderedDict
+
 import numpy as np
+import torch
+import torch.nn as nn
 
 from . import nest
 
@@ -15,7 +18,8 @@ __all__ = [
     'build_vocab_shortlist',
     'to_gpu',
     'should_trigger_by_steps',
-    'Saver'
+    'Saver',
+    'cache_parameters'
 ]
 
 
@@ -262,3 +266,32 @@ class Saver(object):
                 else:
                     print("Loading {0}".format(name))
                     obj.load_state_dict(state_dict[name])
+
+
+@contextlib.contextmanager
+def cache_parameters(module: nn.Module, cache_gradients=False):
+    """
+    Cache the parameters and their gradients of a module.
+
+    When this context manager exits, parameters of the module will be updated with the original ones,
+    while gradients will add the newly generated gradients within this manager.
+    """
+    param_cache = OrderedDict()
+    grad_cache = OrderedDict()
+
+    for name, param in module.named_parameters():
+        param_cache[name] = param.detach().clone()
+        if cache_gradients and param.grad is not None:
+            grad_cache[name] = param.grad.detach().clone()
+
+    if cache_gradients:
+        module.zero_grad()
+
+    yield
+
+    with torch.no_grad():
+        for name, param in module.named_parameters():
+            if name in param_cache:
+                param.copy_(param_cache[name])
+            if cache_gradients and name in grad_cache:
+                param.grad.add_(grad_cache[name])

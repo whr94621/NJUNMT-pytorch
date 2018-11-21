@@ -58,6 +58,12 @@ parser.add_argument("--max_steps", type=int, default=150,
 parser.add_argument("--alpha", type=float, default=-1.0,
                     help="""Factor to do length penalty. Negative value means close length penalty.""")
 
+parser.add_argument("--multi_gpu", action="store_true",
+                    help="""Running on multiple GPUs.""")
+
+parser.add_argument("--shared_dir", type=str, default=None,
+                    help="""Shared directory across nodes. Default is '/tmp'""")
+
 
 def run(**kwargs):
     args = parser.parse_args()

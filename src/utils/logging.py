@@ -1,11 +1,14 @@
-import sys
 import contextlib
-import os
-import tqdm
 import logging
+import os
+import sys
+
+import tqdm
 
 __all__ = [
     "write_log_to_file",
+    'set_logging_level',
+    'close_logging',
     "INFO",
     "WARN",
     "ERROR",
@@ -32,7 +35,6 @@ class TqdmLoggingHandler(logging.Handler):
 
 
 def _init_global_logger():
-
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     tqdm_handler = TqdmLoggingHandler()
@@ -41,8 +43,8 @@ def _init_global_logger():
 
     return logger
 
-class GlobalLogger(object):
 
+class GlobalLogger(object):
     _GLOBAL_LOGGER = _init_global_logger()
 
     @staticmethod
@@ -72,22 +74,40 @@ class GlobalLogger(object):
 
         pass
 
+
 _global_logger = GlobalLogger._GLOBAL_LOGGER
 
 write_log_to_file = GlobalLogger.write_log_to_file
 
+LOGGING_LEVEL = 0
+
+
+def set_logging_level(level):
+    global LOGGING_LEVEL
+    LOGGING_LEVEL = level
+
+
+def close_logging():
+    global LOGGING_LEVEL
+    LOGGING_LEVEL = 60
+
+
 def ERROR(string):
-    _global_logger.error(string)
+    if LOGGING_LEVEL <= 40:
+        _global_logger.error(string)
+
 
 def INFO(string):
-    _global_logger.info(string)
+    if LOGGING_LEVEL <= 20:
+        _global_logger.info(string)
+
 
 def WARN(string):
-    _global_logger.warning(string)
+    if LOGGING_LEVEL <= 30:
+        _global_logger.warning(string)
+
 
 def PRINT(*string):
-    ss = [s if isinstance(s, str) else '{0}'.format(s) for s in string]
-    sys.stderr.write('{0}\n'.format(' '.join(ss)))
-
-
-
+    if LOGGING_LEVEL <= 20:
+        ss = [s if isinstance(s, str) else '{0}'.format(s) for s in string]
+        sys.stderr.write('{0}\n'.format(' '.join(ss)))

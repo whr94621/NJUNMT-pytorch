@@ -48,7 +48,7 @@ training_configs:
   buffer_size: 100 # Only valid when use_bucket is true.
   batch_size: 10
   batching_key: "samples"
-  update_cycle: -1
+  update_cycle: 1
   valid_batch_size: 100
   disp_freq: 100
   save_freq: 1000

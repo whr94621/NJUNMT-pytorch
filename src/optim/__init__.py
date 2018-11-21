@@ -8,10 +8,25 @@
 # {'params': model.base.parameters()},
 # {'params': model.classifier.parameters(), 'lr': 1e-3}
 # ], lr=1e-2, momentum=0.9)
+
+import torch.nn as nn
 import torch.optim
 from torch.nn.utils.clip_grad import clip_grad_norm_
-from .adamw import AdamW
+
 from .adafactor import Adafactor
+from .adamw import AdamW
+
+try:
+    from src.distributed import DistributedOptimizer
+    import horovod.torch as hvd
+except ImportError:
+    DistributedOptimizer = None
+
+
+def _rescale_grad(parameters, denom):
+    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    for p in parameters:
+        p.grad.data.div_(denom)
 
 
 class Optimizer(object):
@@ -36,11 +51,12 @@ class Optimizer(object):
 
     def __init__(self,
                  name,
-                 model,
+                 model: nn.Module,
                  lr=0,
                  weight_decay=0,
                  grad_clip=None,
                  optim_args=None,
+                 distributed=False,
                  **kwargs):
         """
         :param decay_method: Method of learning rate decay.
@@ -52,6 +68,7 @@ class Optimizer(object):
         self.init_lr = lr
         self.weight_decay = weight_decay
         self.gclip = grad_clip
+        self.distributed = distributed
 
         self._count = 0
 
@@ -93,29 +110,34 @@ class Optimizer(object):
         self.optim = self.methods[self.name](self.param_groups,
                                              **self.optim_args)
 
+        if distributed:
+            if DistributedOptimizer is None:
+                error_info = "Cannot import horovod, distributed training is not supported!"
+                raise ImportError(error_info)
+            self.optim = DistributedOptimizer(optimizer=self.optim,
+                                              named_parameters=self.model.named_parameters())
+
         # Assign shortcuts
         self.zero_grad = self.optim.zero_grad
-
-        # Skip useless if evaluation logic if gradient_clip not requested
-        if self.gclip == 0 or self.gclip is None:
-            self.step = self.optim.step
 
     def zero_grad(self):
         self.optim.zero_grad()
 
-    def step(self, closure=None):
+    def step(self, denom=1.0, closure=None):
         """Gradient clipping aware step()."""
+
+        # 1. allreduce gradients
+        if self.distributed:
+            self.optim.synchronize()
+
+        # 2. rescale gradients
+        _rescale_grad(self.params, denom=denom)
+
+        # 3. gradient clips
         if self.gclip is not None and self.gclip > 0:
             clip_grad_norm_(self.params, self.gclip)
-        self.optim.step(closure)
 
-    def rescale_lrate(self, scale, min_lrate=-1.0):
-        if isinstance(scale, list):
-            for scale_, group in zip(scale, self.optim.param_groups):
-                group['lr'] = max(group['lr'] * scale_, min_lrate)
-        else:
-            for group in self.optim.param_groups:
-                group['lr'] = max(group['lr'] * scale, min_lrate)
+        self.optim.step(closure)
 
     def get_lrate(self):
 

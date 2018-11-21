@@ -1,4 +1,5 @@
 import argparse
+
 from src.main import translate
 
 parser = argparse.ArgumentParser()
@@ -35,8 +36,13 @@ parser.add_argument("--max_steps", type=int, default=150,
 parser.add_argument("--alpha", type=float, default=-1.0,
                     help="""Factor to do length penalty. Negative value means close length penalty.""")
 
-def run(**kwargs):
+parser.add_argument("--multi_gpu", action="store_true",
+                    help="""Running on multiple GPUs.""")
 
+parser.add_argument("--shared_dir", type=str, default=None,
+                    help="""Shared directory across nodes. Default is '/tmp'""")
+
+def run(**kwargs):
     args = parser.parse_args()
 
     # Modify some options.
@@ -44,6 +50,7 @@ def run(**kwargs):
         setattr(args, k, v)
 
     translate(args)
+
 
 if __name__ == '__main__':
     run()
