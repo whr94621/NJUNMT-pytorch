@@ -1,23 +1,25 @@
 data_configs:
-  lang_pair: "zh-en"
+  lang_pair: "de-en"
   train_data:
-    - "./unittests/data/train/zh.under50.txt"
-    - "./unittests/data/train/en.under50.txt"
+  - "./unittests/data/train.de"
+  - "./unittests/data/train.en"
   valid_data:
-    - "./unittests/data/dev/zh.0"
-    - "./unittests/data/dev/en.0"
-  bleu_valid_reference: "./unittests/data/dev/en."
+  - "./unittests/data/dev.de"
+  - "./unittests/data/dev.en"
+  bleu_valid_reference: "./unittests/data/dev.en"
   vocabularies:
-    - type: "word"
-      dict_path: "./unittests/data/dict/dict.zh.json"
-      max_n_words: 501
-    - type: "word"
-      dict_path: "./unittests/data/dict/dict.en.json"
-      max_n_words: 502
+  - type: "bpe"
+    dict_path: "./unittests/data/vocab.bpe.32000.json"
+    max_n_words: 500
+    codes: "./unittests/data/bpe.32000"
+  - type: "bpe"
+    dict_path: "./unittests/data/vocab.bpe.32000.json"
+    max_n_words: 500
+    codes: "./unittests/data/bpe.32000"
   max_len:
     - 20
     - 20
-  num_refs: 4
+  num_refs: 1
   eval_at_char_level: false
 
 model_configs:
@@ -25,7 +27,8 @@ model_configs:
   d_word_vec: 24
   d_model: 24
   dropout: 0.1
-  proj_share_weight: true
+  tie_input_output_embedding: true
+  tie_source_target_embedding: true
   bridge_type: zero
   label_smoothing: 0.1
 

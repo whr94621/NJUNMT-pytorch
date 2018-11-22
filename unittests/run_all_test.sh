@@ -15,5 +15,3 @@ set -e
 
 test_single_file ./unittests/test_dl4mt.py
 test_single_file ./unittests/test_transformer.py
-test_single_file ./unittests/test_bpe.py
-

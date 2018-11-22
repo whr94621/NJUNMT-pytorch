@@ -894,21 +894,21 @@ def train(flags):
                     uidx, valid_loss, valid_bleu, lrate, bad_count
                 ))
 
-                # ================================================================================== #
-                # Saving checkpoints
-                if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['save_freq'], debug=flags.debug):
-                    model_collections.add_to_collection("uidx", uidx)
-                    model_collections.add_to_collection("eidx", eidx)
-                    model_collections.add_to_collection("bad_count", bad_count)
+            # ================================================================================== #
+            # Saving checkpoints
+            if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['save_freq'], debug=flags.debug):
+                model_collections.add_to_collection("uidx", uidx)
+                model_collections.add_to_collection("eidx", eidx)
+                model_collections.add_to_collection("bad_count", bad_count)
 
-                    if not is_early_stop:
-                        if rank == 0:
-                            checkpoint_saver.save(global_step=uidx,
-                                                  model=nmt_model,
-                                                  optim=optim,
-                                                  lr_scheduler=scheduler,
-                                                  collections=model_collections,
-                                                  ma=ma)
+                if not is_early_stop:
+                    if rank == 0:
+                        checkpoint_saver.save(global_step=uidx,
+                                              model=nmt_model,
+                                              optim=optim,
+                                              lr_scheduler=scheduler,
+                                              collections=model_collections,
+                                              ma=ma)
 
         if training_progress_bar is not None:
             training_progress_bar.close()

@@ -278,7 +278,7 @@ class Transformer(NMTModel):
     def __init__(
             self, n_src_vocab, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None,
-            dropout=0.1, proj_share_weight=True, **kwargs):
+            dropout=0.1, tie_input_output_embedding=True, tie_source_target_embedding=False, **kwargs):
 
         super(Transformer, self).__init__()
 
@@ -298,7 +298,12 @@ class Transformer(NMTModel):
             'To facilitate the residual connections, \
              the dimensions of all module output shall be the same.'
 
-        if proj_share_weight:
+        if tie_source_target_embedding:
+            assert n_src_vocab == n_tgt_vocab, \
+                "source and target vocabulary should have equal size when tying source&target embedding"
+            self.encoder.embeddings.embeddings.weight = self.decoder.embeddings.embeddings.weight
+
+        if tie_input_output_embedding:
             self.generator = Generator(n_words=n_tgt_vocab,
                                        hidden_size=d_word_vec,
                                        shared_weight=self.decoder.embeddings.embeddings.weight,
