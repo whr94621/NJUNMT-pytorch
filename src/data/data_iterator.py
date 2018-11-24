@@ -21,10 +21,7 @@
 # SOFTWARE.
 
 import itertools
-import pickle
 import random
-import tempfile
-import zlib
 from itertools import count
 from typing import Iterable, Generator
 
@@ -38,9 +35,6 @@ __all__ = [
 ]
 
 random.seed(GlobalNames.SEED)
-
-DEFAULT_BUFFER_SIZE_FACTOR = 20
-
 
 class Batch(object):
     """
@@ -116,11 +110,13 @@ def batching(records, batch_size, batching_key):
     return batches
 
 
-def fill_buffer(data_iter, stop, key):
+def fill_buffer(data_iter, buffer_size):
+    """
+    Initialize a buffer from a iterator
+    """
     records = []
 
     n_samples = 0
-    key_values = 0
 
     while True:
         try:
@@ -131,14 +127,9 @@ def fill_buffer(data_iter, stop, key):
         records.append(record)
 
         n_samples += 1
-        key_values += record.index
 
-        if key == "samples":
-            if n_samples >= stop:
-                break
-        else:
-            if key_values >= stop:
-                break
+        if n_samples >= buffer_size:
+            break
 
     return records
 
@@ -168,22 +159,19 @@ def numbering_records_iterator(record_iter: Iterable[Record]):
         yield zip_records(Record(ii, index=-float('inf')), record)
 
 
-def shuffle_iterator(iterator: Iterable[Record]) -> Generator[Record, None, None]:
-    buffer = []
+def shuffle_iterator(iterator: Iterable[Record], buffer_size) -> Generator[Record, None, None]:
+    buffer = fill_buffer(iterator, buffer_size=buffer_size)
+    random.shuffle(buffer)
 
     for item in iterator:
-        buffer.append(item)
+        idx = random.randint(0, buffer_size - 1)
 
-    random.shuffle(buffer)
-    buffer = [zlib.compress(pickle.dumps(obj)) for obj in buffer]
-    tmp_handle = tempfile.TemporaryFile(mode="a+b")
-    tmp_handle.writelines(buffer)
-    del buffer
+        yield buffer[idx]
 
-    tmp_handle.seek(0)
+        buffer[idx] = item
 
-    for item in tmp_handle:
-        yield pickle.loads(zlib.decompress(item))
+    for item in buffer:
+        yield item
 
 
 def split_shards_iterator(iterator: Iterable[Record], number_shards, n_shard) -> Generator[Record, None, None]:
@@ -198,7 +186,7 @@ def bucket_iterator(iterator: Iterable[Record], buffer_size, batching_key) -> Ge
 
         # 1. fill buffer
         if len(buffer) == 0:
-            _inc_buffer = fill_buffer(iterator, buffer_size, key=batching_key)
+            _inc_buffer = fill_buffer(iterator, buffer_size=buffer_size)
 
             if len(_inc_buffer) == 0:
                 break
@@ -255,7 +243,7 @@ class DataIterator(object):
     def __init__(self,
                  dataset,
                  batch_size,
-                 buffer_size=None,
+                 buffer_size=10000,
                  use_bucket=True,
                  batching_func="samples",
                  numbering=False,
@@ -272,6 +260,9 @@ class DataIterator(object):
                 the number of samples. When batching_key is "tokens", it represents the tokens in a batch.
             use_bucket: Boolean value. Whether to use bucket.
             batching_key: Criterion to allocate a batch. Can only be "samples" or "tokens"
+            buffer_size: How many samples can be stored in memory for buffer. There are two places which need buffer--
+                shuffle_iterator and bucket_iterator, so the actual memory consumption would be two times if you enable
+                this two iterators at the same time.
         """
 
         self.dataset = dataset
@@ -297,10 +288,7 @@ class DataIterator(object):
         # else we suppose that their are 50 tokens in one sample and then estimate
         # the number of samples in one batch as self.batch_size // 50
 
-        if buffer_size is None:
-            buffer_size = self.batch_size * DEFAULT_BUFFER_SIZE_FACTOR
-
-        self._buffer_size = buffer_size
+        self.buffer_size = buffer_size
         self.use_bucket = use_bucket
         self.numbering = numbering
 
@@ -338,11 +326,11 @@ class DataIterator(object):
 
         # 4. shuffle (optional)
         if self.shuffle:
-            data_iter = shuffle_iterator(data_iter)
+            data_iter = shuffle_iterator(data_iter, buffer_size=self.buffer_size)
 
         # 5. bucketing (optional)
         if self.use_bucket:
-            data_iter = bucket_iterator(data_iter, buffer_size=self._buffer_size, batching_key=self._batching_key)
+            data_iter = bucket_iterator(data_iter, buffer_size=self.buffer_size, batching_key=self._batching_key)
 
         # 5. batching
         data_iter = batching_iterator(data_iter, batch_size=self.batch_size, batching_key=self._batching_key)
