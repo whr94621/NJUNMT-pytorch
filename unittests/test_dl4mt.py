@@ -21,8 +21,9 @@
 # SOFTWARE.
 
 import os
-from src.utils.logging import INFO
+
 import unittests.test_utils as test_utils
+from src.utils.logging import INFO
 
 
 def test_dl4mt_train(test_dir, use_gpu=False):
@@ -52,7 +53,7 @@ def test_dl4mt_inference(test_dir, use_gpu=False):
     saveto = os.path.join(test_dir, "save")
     model_name = test_utils.get_model_name(config_path)
     model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
-    source_path = "./unittests/data/dev/zh.0"
+    source_path = "./unittests/data/dev.de"
     batch_size = 3
     beam_size = 3
 
