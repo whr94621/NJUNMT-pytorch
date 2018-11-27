@@ -41,6 +41,8 @@
 # This may cause performance degradation as we do not
 # overlap computation and communication by using hook.
 
+import collections
+
 import torch
 from horovod.torch import mpi_ops
 from horovod.torch.compression import Compression
@@ -67,14 +69,12 @@ class _DistributedOptimizer(torch.optim.Optimizer):
                              'tuples (name, parameter), usually produced by '
                              'model.named_parameters().')
 
-        self._parameter_names = {v: k for k, v
-                                 in sorted(named_parameters)}
+        self.named_parameters = collections.OrderedDict(named_parameters)
 
         self._handles = {}
-        self._grad_accs = []
 
-    def _allreduce_grad(self, p):
-        name = self._parameter_names.get(p)
+    def _allreduce_grad(self, p, name):
+
         tensor = p.grad.data
         tensor_compressed, ctx = self._compression.compress(tensor)
         # We use sum here and manually rescaled gradient by passing a denominator to optimizer.
@@ -82,15 +82,19 @@ class _DistributedOptimizer(torch.optim.Optimizer):
         return handle, ctx
 
     def synchronize(self):
+
+        assert len(self._handles) == 0, \
+            "Error: Last run of synchronize did not complete all the allreduce operations."
+
         ctx = None
-        for p, value in self._handles.items():
-            handle, ctx = value
-            if handle is None:
-                handle, ctx = self._allreduce_grad(p)
-                self._handles[p] = (handle, ctx)
+        for name, p in self.named_parameters.items():
+            handle, ctx = self._allreduce_grad(p, name)
+            self._handles[p] = (handle, ctx)
+
         for p, (handle, _) in self._handles.items():
             output = mpi_ops.synchronize(handle)
             p.grad.data.set_(self._compression.decompress(output, ctx))
+
         self._handles.clear()
 
     def step(self, closure=None):

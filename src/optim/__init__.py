@@ -117,9 +117,6 @@ class Optimizer(object):
             self.optim = DistributedOptimizer(optimizer=self.optim,
                                               named_parameters=self.model.named_parameters())
 
-        # Assign shortcuts
-        self.zero_grad = self.optim.zero_grad
-
     def zero_grad(self):
         self.optim.zero_grad()
 

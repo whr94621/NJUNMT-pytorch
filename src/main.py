@@ -348,7 +348,6 @@ def loss_evaluation(model, critic, valid_iterator, rank=0, world_size=1):
     """
 
     n_sents = 0
-    n_tokens = 0.0
 
     sum_loss = 0.0
 
@@ -358,7 +357,6 @@ def loss_evaluation(model, critic, valid_iterator, rank=0, world_size=1):
         _, seqs_x, seqs_y = batch
 
         n_sents += len(seqs_x)
-        n_tokens += sum(len(s) for s in seqs_y)
 
         x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
 
