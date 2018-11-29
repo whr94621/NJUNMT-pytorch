@@ -1,5 +1,9 @@
 # NJUNMT-pytorch
 
+---
+[English](README.md), [中文](README-zh.md)
+---
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Build Status](https://travis-ci.com/whr94621/NJUNMT-pytorch.svg?branch=dev-travis-ci)](https://travis-ci.com/whr94621/NJUNMT-pytorch)
 
 NJUNMT-pytorch is an open-source toolkit for neural machine translation.
@@ -23,7 +27,6 @@ mechanism.
         - [3. Training](#3-training)
         - [4. Translation](#4-translation)
     - [Benchmark](#benchmark)
-    - [Acknowledgement](#acknowledgement)
     - [Contact](#contact)
 
 ## Requirements
@@ -87,14 +90,19 @@ python -m src.bin.train \
     --valid_path <path-to-save-validation-translation> \
     --use_gpu
 ```
+
 See detail options by running ```python -m src.bin.train --help```.
 
 During training, checkpoints and best models will be saved under the directory specified by option ```---saveto```. Suppose that the model name is "MyModel", there would be several files under that directory:
 
 - **MyModel.ckpt**: A text file recording names of all the kept checkpoints
+
 - **MyModel.ckpt.xxxx**: Checkpoint stored in step xxxx
+
 - **MyModel.best**: A text file recording names of all the kept best checkpoints
+  
 - **MyModel.best.xxxx**: Best checkpoint stored in step xxxx.
+  
 - **MyModel.best.final**: Final best model, i.e., the model achieved best performance on validation set. Only model parameters are kept in it.
 
 ### 4. Translation
@@ -102,6 +110,7 @@ During training, checkpoints and best models will be saved under the directory s
 When training is over, our code will automatically save the best model. Usually you could just use the final best model, which is named as xxxx.best.final, to translate. This model achieves the best performance on the validation set.
 
 We can translation any text by running:
+
 ``` bash
 export CUDA_VISIBLE_DEVICES=0
 python -m src.bin.translate \
@@ -114,6 +123,7 @@ python -m src.bin.translate \
     --alpha <your-length-penalty> \
     --use_gpu
 ```
+
 See detail options by running ```python -m src.bin.translate --help```.
 
 Also our code support ensemble decoding. See more options by running ```python -m src.bin.ensemble_translate --help```
@@ -122,10 +132,6 @@ Also our code support ensemble decoding. See more options by running ```python -
 
 See [BENCHMARK.md](./BENCHMARK.md)
 
-## Acknowledgement
-
-- This code is heavily borrowed from OpenNMT/OpenNMT-py and have been
-simplified for research use.
-
 ## Contact
+
 If you have any question, please contact [whr94621@foxmail.com](mailto:whr94621@foxmail.com)
