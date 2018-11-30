@@ -876,7 +876,12 @@ def train(flags):
                             torch.save(nmt_model.state_dict(), best_model_prefix + ".final")
 
                             # 2. record all several best models
-                            best_model_saver.save(global_step=uidx, model=nmt_model)
+                            best_model_saver.save(global_step=uidx,
+                                                  model=nmt_model,
+                                                  optim=optim,
+                                                  lr_scheduler=scheduler,
+                                                  collections=model_collections,
+                                                  ma=ma)
                 else:
                     bad_count += 1
 
