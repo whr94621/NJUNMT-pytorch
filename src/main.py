@@ -316,7 +316,7 @@ def ensemble_inference(valid_iterator,
         # Append result
         for sent_t in word_ids:
             for ii, sent_ in enumerate(sent_t):
-                sent_ = [vocab_tgt.id2token(wid) for wid in sent_ if wid != EOS]
+                sent_ = [vocab_tgt.id2token(wid) for wid in sent_ if wid != EOS and wid != PAD]
                 if len(sent_) > 0:
                     trans_in_all_beams[ii].append(vocab_tgt.tokenizer.detokenize(sent_))
                 else:
