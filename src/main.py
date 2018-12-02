@@ -596,12 +596,9 @@ def train(flags):
     # 0. Initial
     model_collections = Collections()
 
-    # Saving
     checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(flags.saveto, flags.model_name)),
                              num_max_keeping=training_configs['num_kept_checkpoints']
                              )
-
-    # Saving best k checkpoint
     best_model_prefix = os.path.join(flags.saveto, flags.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
     best_model_saver = Saver(save_prefix=best_model_prefix, num_max_keeping=training_configs['num_kept_best_model'])
 
