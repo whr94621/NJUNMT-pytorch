@@ -18,8 +18,6 @@ def rnn_init(tensor):
     if tensor.ndimension() != 2:
         return default_init(tensor)
 
-    return default_init(tensor)
-
     r, c = tensor.size()
 
     if r % c == 0:
