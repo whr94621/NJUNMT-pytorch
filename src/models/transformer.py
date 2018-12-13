@@ -27,6 +27,7 @@ import torch.nn.functional as F
 
 from src.data.vocabulary import PAD
 from src.decoding.utils import tile_batch, tensor_gather_helper
+from src.models.base import NMTModel
 from src.modules.basic import BottleLinear as Linear
 from src.modules.embeddings import Embeddings
 from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
@@ -271,7 +272,7 @@ class Generator(nn.Module):
             return F.softmax(logits, dim=-1)
 
 
-class Transformer(nn.Module):
+class Transformer(NMTModel):
     ''' A sequence to sequence model with attention mechanism. '''
 
     def __init__(

@@ -7,11 +7,13 @@ class CGRUCell(nn.Module):
 
     def __init__(self,
                  input_size,
-                 hidden_size):
+                 hidden_size,
+                 context_size):
 
         super(CGRUCell, self).__init__()
 
         self.hidden_size = hidden_size
+        self.context_size = context_size
 
         self.gru1 = nn.GRUCell(input_size=input_size, hidden_size=hidden_size)
         self.attn = BahdanauAttention(query_size=hidden_size, key_size=self.context_size)
@@ -26,10 +28,10 @@ class CGRUCell(nn.Module):
         for weight in self.gru2.parameters():
             my_init.rnn_init(weight)
 
-
-    @property
-    def context_size(self):
-        return self.hidden_size * 2
+    #
+    # @property
+    # def context_size(self):
+    #     return self.hidden_size * 2
 
     def forward(self,
                 input,
