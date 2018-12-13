@@ -14,6 +14,7 @@
 
 from .dl4mt import DL4MT
 from .transformer import Transformer
+from .hybrid_nmt import TransEncRNNDec
 
 __all__ = [
     "build_model",
@@ -21,7 +22,8 @@ __all__ = [
 
 MODEL_CLS = {
     "Transformer": Transformer,
-    "DL4MT": DL4MT
+    "DL4MT": DL4MT,
+    "Hybrid": TransEncRNNDec
 }
 
 

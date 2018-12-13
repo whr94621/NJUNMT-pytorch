@@ -221,7 +221,8 @@ class DL4MT(NMTModel):
 
         self.encoder = Encoder(n_words=n_src_vocab, input_size=d_word_vec, hidden_size=d_model)
 
-        self.decoder = Decoder(n_words=n_tgt_vocab, input_size=d_word_vec, hidden_size=d_model,
+        self.decoder = Decoder(n_words=n_tgt_vocab, input_size=d_word_vec,
+                               hidden_size=d_model, context_size=d_model*2,
                                dropout_rate=dropout, bridge_type=bridge_type)
 
         if proj_share_weight is False:
