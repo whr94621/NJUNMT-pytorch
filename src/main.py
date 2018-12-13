@@ -433,6 +433,11 @@ def train(FLAGS):
                             n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
     INFO(nmt_model)
 
+    params_total = sum([p.numel() for n, p in nmt_model.named_parameters()])
+    params_with_embedding = sum([p.numel() for n, p in nmt_model.named_parameters() if n.find('embedding') == -1])
+    INFO('Total parameters: {}'.format(params_total))
+    INFO('Total parameters (excluding word embeddings): {}'.format(params_with_embedding))
+
     critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
 
     INFO(critic)
@@ -499,7 +504,7 @@ def train(FLAGS):
 
     cum_samples = 0
     cum_words = 0
-    best_valid_loss = 1.0 * 1e10  # Max Float
+    valid_loss = best_valid_loss = float('inf') # Max Float
     saving_files = []
 
     # Timer for computing speed
@@ -514,7 +519,7 @@ def train(FLAGS):
 
         # Build iterator and progress bar
         training_iter = training_iterator.build_generator()
-        training_progress_bar = tqdm(desc='  - (Epoch %d)   ' % eidx,
+        training_progress_bar = tqdm(desc=' - (Epc {}, Upd {}) '.format(eidx, uidx),
                                      total=len(training_iterator),
                                      unit="sents"
                                      )
@@ -533,10 +538,8 @@ def train(FLAGS):
             cum_samples += n_samples_t
             cum_words += n_words_t
 
-            training_progress_bar.update(n_samples_t)
-
+            train_loss = 0.
             optim.zero_grad()
-
             try:
                 # Prepare data
                 for seqs_x_t, seqs_y_t in split_shard(seqs_x, seqs_y, split_size=training_configs['update_cycle']):
@@ -549,6 +552,7 @@ def train(FLAGS):
                                            eval=False,
                                            normalization=n_samples_t,
                                            norm_by_words=training_configs["norm_by_words"])
+                    train_loss += loss / y.size(1)
                 optim.step()
 
             except RuntimeError as e:
@@ -561,6 +565,12 @@ def train(FLAGS):
 
             if ma is not None and eidx >= training_configs['moving_average_start_epoch']:
                 ma.step()
+
+            training_progress_bar.update(n_samples_t)
+            training_progress_bar.set_description(' - (Epc {}, Upd {}) '.format(eidx, uidx))
+            training_progress_bar.set_postfix_str(
+                'TrainLoss: {:.2f}, ValidLoss(best): {:.2f} ({:.2f})'.format(train_loss, valid_loss, best_valid_loss))
+            summary_writer.add_scalar("train_loss", scalar_value=train_loss, global_step=uidx)
 
             # ================================================================================== #
             # Display some information

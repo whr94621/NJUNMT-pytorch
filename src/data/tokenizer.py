@@ -1,5 +1,5 @@
 from .bpe import Bpe
-
+import re
 
 class _Tokenizer(object):
     """The abstract class of Tokenizer
@@ -56,7 +56,8 @@ class BPETokenizer(_Tokenizer):
 
     def detokenize(self, tokens):
 
-        return ' '.join(tokens).replace("@@ ", "")
+        return re.sub(r"@@\s|@@$", "", " ".join(tokens))
+        # return ' '.join(tokens).replace("@@ ", "")
 
 
 class Tokenizer(object):

@@ -157,7 +157,8 @@ def default_configs(user_configs):
     else:
         pass
 
-    user_configs['training_configs'].setdefault("buffer_size", user_configs['training_configs']['batch_size'] * 20)
+    real_batch_size = user_configs['training_configs']['batch_size'] * user_configs['training_configs']['update_cycle']
+    user_configs['training_configs'].setdefault("buffer_size", real_batch_size * 6)
 
     return user_configs
 
