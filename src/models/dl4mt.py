@@ -57,7 +57,7 @@ class Encoder(nn.Module):
         """
         x_mask = x.detach().eq(PAD)
 
-        emb = self.embedding(x)
+        emb = self.embeddings(x)
 
         ctx, _ = self.gru(emb, x_mask)
 
@@ -135,7 +135,7 @@ class Decoder(nn.Module):
 
     def forward(self, y, context, context_mask, hidden, one_step=False, cache=None):
 
-        emb = self.embedding(y)  # [batch_size, seq_len, dim]
+        emb = self.embeddings(y)  # [batch_size, seq_len, dim]
 
         if one_step:
             (out, attn), hidden = self.cgru_cell(emb, hidden, context, context_mask, cache)
