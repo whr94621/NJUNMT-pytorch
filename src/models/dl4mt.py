@@ -229,8 +229,7 @@ class DL4MT(NMTModel):
             generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
         else:
             generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
-                                  shared_weight=self.decoder.embedding.embeddings.weight
-                                  )
+                                  shared_weight=self.decoder.embeddings.embeddings.weight)
         self.generator = generator
 
     def forward(self, src_seq, tgt_seq, log_probs=True):
