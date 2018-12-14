@@ -19,7 +19,9 @@ __all__ = [
     'to_gpu',
     'should_trigger_by_steps',
     'Saver',
-    'cache_parameters'
+    'cache_parameters',
+    'AverageMeter',
+    'TimeMeter'
 ]
 
 
@@ -295,3 +297,55 @@ def cache_parameters(module: nn.Module, cache_gradients=False):
                 param.copy_(param_cache[name])
             if cache_gradients and name in grad_cache:
                 param.grad.add_(grad_cache[name])
+
+
+class Meter(object):
+
+    def __init__(self):
+        self.ave = 0.0
+        self.denom = 0.0
+
+    def state_dict(self):
+        return {"ave": self.ave, "denom": self.denom}
+
+    def load_state_dict(self, state_dict):
+        self.ave = state_dict['ave']
+        self.denom = state_dict['denom']
+
+    @property
+    def sum(self):
+        return self.ave * self.denom
+
+
+class AverageMeter(Meter):
+    """Compute and storage the average of some value."""
+
+    def update(self, v, n):
+        self.ave = self.ave * (self.denom / (self.denom + float(n))) + v / (self.denom + float(n))
+        self.denom += float(n)
+
+    @property
+    def value(self):
+        return self.ave
+
+
+class TimeMeter(Meter):
+    """Compute and storage the average of some value per seconds."""
+
+    def __init__(self):
+        super().__init__()
+
+        self.timer = Timer()
+        self.timer.tic()
+
+    def start(self):
+        self.timer.tic()
+
+    def update(self, v):
+        elapsed_time = self.timer.toc(return_seconds=True)
+
+        self.ave = self.ave * (self.denom / (elapsed_time + self.denom)) + v / (
+                elapsed_time + self.denom)
+
+        self.denom += elapsed_time
+        self.timer.tic()

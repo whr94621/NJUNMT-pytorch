@@ -37,6 +37,9 @@ parser.add_argument("--multi_gpu", action="store_true",
 parser.add_argument("--shared_dir", type=str, default=None,
                     help="""Shared directory across nodes. Default is '/tmp'""")
 
+parser.add_argument("--buffer_size", type=int, default=10000,
+                    help="""How many buffer_size""")
+
 
 def run(**kwargs):
     args = parser.parse_args()

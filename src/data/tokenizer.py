@@ -1,5 +1,7 @@
-from .bpe import Bpe
 import re
+
+from .bpe import Bpe
+
 
 class _Tokenizer(object):
     """The abstract class of Tokenizer
@@ -42,10 +44,8 @@ class BPETokenizer(_Tokenizer):
         """
         super(BPETokenizer, self).__init__(**kwargs)
 
-        if codes is not None:
-            self.bpe = Bpe(codes=codes)
-        else:
-            self.bpe = None
+        assert codes is not None, "BPETokenize must provide BPE model."
+        self.bpe = Bpe(codes=codes)
 
     def tokenize(self, sent):
 
@@ -57,7 +57,6 @@ class BPETokenizer(_Tokenizer):
     def detokenize(self, tokens):
 
         return re.sub(r"@@\s|@@$", "", " ".join(tokens))
-        # return ' '.join(tokens).replace("@@ ", "")
 
 
 class Tokenizer(object):

@@ -538,8 +538,6 @@ def train(flags):
     vocab_src = Vocabulary(**data_configs["vocabularies"][0])
     vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
 
-    actual_buffer_size = training_configs["buffer_size"] * max(1, training_configs["update_cycle"])
-
     train_bitext_dataset = ZipDataset(
         TextLineDataset(data_path=data_configs['train_data'][0],
                         vocabulary=vocab_src,
@@ -563,7 +561,7 @@ def train(flags):
     training_iterator = DataIterator(dataset=train_bitext_dataset,
                                      batch_size=training_configs["batch_size"],
                                      use_bucket=training_configs['use_bucket'],
-                                     buffer_size=actual_buffer_size,
+                                     buffer_size=flags.buffer_size,
                                      batching_func=training_configs['batching_key'],
                                      world_size=world_size,
                                      rank=rank)
@@ -598,9 +596,12 @@ def train(flags):
     # 0. Initial
     model_collections = Collections()
 
+    # Saving
     checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(flags.saveto, flags.model_name)),
                              num_max_keeping=training_configs['num_kept_checkpoints']
                              )
+
+    # Saving best k checkpoint
     best_model_prefix = os.path.join(flags.saveto, flags.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
     best_model_saver = Saver(save_prefix=best_model_prefix, num_max_keeping=training_configs['num_kept_best_model'])
 
@@ -662,12 +663,24 @@ def train(flags):
     else:
         ma = None
 
+    # 7. Build meters
+    train_loss_meter = AverageMeter()
+    sent_per_sec_meter = TimeMeter()
+    tok_per_sec_meter = TimeMeter()
+
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # Reload from latest checkpoint
     if flags.reload:
-        checkpoint_saver.load_latest(model=nmt_model, optim=optim, lr_scheduler=scheduler,
-                                     collections=model_collections, ma=ma)
+        checkpoint_saver.load_latest(model=nmt_model,
+                                     optim=optim,
+                                     lr_scheduler=scheduler,
+                                     collections=model_collections,
+                                     ma=ma,
+                                     train_loss_meter=train_loss_meter,
+                                     sent_per_sec_meter=sent_per_sec_meter,
+                                     tok_per_sec_meter=tok_per_sec_meter
+                                     )
 
     # broadcast parameters and optimizer states
     if world_size > 1:
@@ -684,19 +697,19 @@ def train(flags):
     uidx = model_collections.get_collection("uidx", [1])[-1]
     bad_count = model_collections.get_collection("bad_count", [0])[-1]
     oom_count = model_collections.get_collection("oom_count", [0])[-1]
-    cum_n_samples = 0
-    cum_n_words = 0
+
     update_cycle = training_configs['update_cycle']
     grad_denom = 0
+    train_loss = 0.0
+    cum_n_words = 0
 
     if rank == 0:
         summary_writer = SummaryWriter(log_dir=flags.log_path)
     else:
         summary_writer = None
 
-    # Timer for computing speed
-    timer_for_speed = Timer()
-    timer_for_speed.tic()
+    sent_per_sec_meter.start()
+    tok_per_sec_meter.start()
 
     INFO('Begin training...')
 
@@ -721,8 +734,6 @@ def train(flags):
             seqs_x, seqs_y = batch
 
             batch_size = len(seqs_x)
-
-            cum_n_samples += batch_size
             cum_n_words += sum(len(s) for s in seqs_y)
 
             try:
@@ -739,6 +750,7 @@ def train(flags):
 
                 update_cycle -= 1
                 grad_denom += batch_size
+                train_loss += loss
 
             except RuntimeError as e:
                 if 'out of memory' in str(e):
@@ -755,28 +767,39 @@ def train(flags):
 
             if update_cycle == 0:
 
-                # 1. update parameters
+                # 0. reduce variables
                 if world_size > 1:
                     grad_denom = dist.all_reduce_py(grad_denom)
+                    train_loss = dist.all_reduce_py(train_loss)
+                    cum_n_words = dist.all_reduce_py(cum_n_words)
 
+                # 1. update parameters
                 optim.step(denom=grad_denom)
                 optim.zero_grad()
 
                 if training_progress_bar is not None:
                     training_progress_bar.update(grad_denom)
 
-                # 2. reset update_cycle and grad_denom, update uidx
-                update_cycle = training_configs['update_cycle']
-                grad_denom = 0
-                uidx += 1
-
-                # 3. learning rate scheduling
+                # 2. learning rate scheduling
                 if scheduler is not None and optimizer_configs["schedule_method"] != "loss":
                     scheduler.step(global_step=uidx)
 
-                # 4. update moving average
+                # 3. update moving average
                 if ma is not None and eidx >= training_configs['moving_average_start_epoch']:
                     ma.step()
+
+                # 4. update meters
+                train_loss_meter.update(train_loss, grad_denom)
+                sent_per_sec_meter.update(grad_denom)
+                tok_per_sec_meter.update(cum_n_words)
+
+                # 5. reset accumulated variables, update uidx
+                update_cycle = training_configs['update_cycle']
+                grad_denom = 0
+                uidx += 1
+                cum_n_words = 0.0
+                train_loss = 0.0
+
             else:
                 continue
 
@@ -784,25 +807,17 @@ def train(flags):
             # Display some information
             if should_trigger_by_steps(uidx, eidx, every_n_step=training_configs['disp_freq']):
 
-                if world_size > 1:
-                    cum_n_words = dist.all_reduce_py(cum_n_words)
-                    cum_n_samples = dist.all_reduce_py(cum_n_samples)
-
-                # words per second and sents per second
-                words_per_sec = cum_n_words / (timer.toc(return_seconds=True))
-                sents_per_sec = cum_n_samples / (timer.toc(return_seconds=True))
                 lrate = list(optim.get_lrate())[0]
 
                 if summary_writer is not None:
-                    summary_writer.add_scalar("Speed(words/sec)", scalar_value=words_per_sec, global_step=uidx)
-                    summary_writer.add_scalar("Speed(sents/sen)", scalar_value=sents_per_sec, global_step=uidx)
+                    summary_writer.add_scalar("Speed(sents/sec)", scalar_value=sent_per_sec_meter.ave, global_step=uidx)
+                    summary_writer.add_scalar("Speed(words/sec)", scalar_value=tok_per_sec_meter.ave, global_step=uidx)
+                    summary_writer.add_scalar("train_loss", scalar_value=train_loss_meter.ave, global_step=uidx)
                     summary_writer.add_scalar("lrate", scalar_value=lrate, global_step=uidx)
                     summary_writer.add_scalar("oom_count", scalar_value=oom_count, global_step=uidx)
 
                 # Reset timer
                 timer.tic()
-                cum_n_words = 0
-                cum_n_samples = 0
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing

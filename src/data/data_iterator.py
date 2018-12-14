@@ -179,7 +179,7 @@ def split_shards_iterator(iterator: Iterable[Record], number_shards, n_shard) ->
         yield item
 
 
-def bucket_iterator(iterator: Iterable[Record], buffer_size, batching_key) -> Generator[Record, None, None]:
+def bucket_iterator(iterator: Iterable[Record], buffer_size) -> Generator[Record, None, None]:
     buffer = []
 
     while True:
@@ -330,7 +330,7 @@ class DataIterator(object):
 
         # 5. bucketing (optional)
         if self.use_bucket:
-            data_iter = bucket_iterator(data_iter, buffer_size=self.buffer_size, batching_key=self._batching_key)
+            data_iter = bucket_iterator(data_iter, buffer_size=self.buffer_size)
 
         # 5. batching
         data_iter = batching_iterator(data_iter, batch_size=self.batch_size, batching_key=self._batching_key)
