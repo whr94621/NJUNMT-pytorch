@@ -59,6 +59,8 @@ class NoamScheduler(LearningRateScheduler):
 
         self.d_model = d_model
         self.warmup_steps = warmup_steps
+        # Update learning at first step
+        self.step(global_step=1)
 
     def update_lr(self, old_lr, global_step, **kwargs):
         opt_corr = 0.002
