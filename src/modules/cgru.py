@@ -3,6 +3,7 @@ import torch.nn as nn
 from src.utils import init as my_init
 from .attention import BahdanauAttention
 
+
 class CGRUCell(nn.Module):
 
     def __init__(self,

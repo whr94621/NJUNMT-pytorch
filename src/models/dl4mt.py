@@ -42,10 +42,10 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         # Use PAD
-        self.embedding = Embeddings(num_embeddings=n_words,
-                                    embedding_dim=input_size,
-                                    dropout=0.0,
-                                    add_position_embedding=False)
+        self.embeddings = Embeddings(num_embeddings=n_words,
+                                     embedding_dim=input_size,
+                                     dropout=0.0,
+                                     add_position_embedding=False)
 
         self.gru = RNN(type="gru", batch_first=True, input_size=input_size, hidden_size=hidden_size,
                        bidirectional=True)
@@ -57,7 +57,7 @@ class Encoder(nn.Module):
         """
         x_mask = x.detach().eq(PAD)
 
-        emb = self.embedding(x)
+        emb = self.embeddings(x)
 
         ctx, _ = self.gru(emb, x_mask)
 
@@ -70,6 +70,7 @@ class Decoder(nn.Module):
                  n_words,
                  input_size,
                  hidden_size,
+                 context_size,
                  bridge_type="mlp",
                  dropout_rate=0.0):
 
@@ -77,18 +78,19 @@ class Decoder(nn.Module):
 
         self.bridge_type = bridge_type
         self.hidden_size = hidden_size
-        self.context_size = hidden_size * 2
+        self.context_size = context_size
+        # self.context_size = hidden_size * 2
 
-        self.embedding = Embeddings(num_embeddings=n_words,
+        self.embeddings = Embeddings(num_embeddings=n_words,
                                     embedding_dim=input_size,
                                     dropout=0.0,
                                     add_position_embedding=False)
 
-        self.cgru_cell = CGRUCell(input_size=input_size, hidden_size=hidden_size)
+        self.cgru_cell = CGRUCell(input_size=input_size, hidden_size=hidden_size, context_size=context_size)
 
         self.linear_input = nn.Linear(in_features=input_size, out_features=input_size)
         self.linear_hidden = nn.Linear(in_features=hidden_size, out_features=input_size)
-        self.linear_ctx = nn.Linear(in_features=hidden_size * 2, out_features=input_size)
+        self.linear_ctx = nn.Linear(in_features=context_size, out_features=input_size)
 
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -133,12 +135,12 @@ class Decoder(nn.Module):
 
     def forward(self, y, context, context_mask, hidden, one_step=False, cache=None):
 
-        emb = self.embedding(y)  # [seq_len, batch_size, dim]
+        emb = self.embeddings(y)  # [batch_size, seq_len, dim]
 
         if one_step:
             (out, attn), hidden = self.cgru_cell(emb, hidden, context, context_mask, cache)
         else:
-            # emb: [seq_len, batch_size, dim]
+            # emb: [batch_size, seq_len, dim]
             out = []
             attn = []
 
@@ -154,7 +156,7 @@ class Decoder(nn.Module):
 
         logits = F.tanh(logits)
 
-        logits = self.dropout(logits)  # [seq_len, batch_size, dim]
+        logits = self.dropout(logits)  # [batch_size, seq_len, dim]
 
         return logits, hidden
 
@@ -219,20 +221,20 @@ class DL4MT(NMTModel):
 
         self.encoder = Encoder(n_words=n_src_vocab, input_size=d_word_vec, hidden_size=d_model)
 
-        self.decoder = Decoder(n_words=n_tgt_vocab, input_size=d_word_vec, hidden_size=d_model,
+        self.decoder = Decoder(n_words=n_tgt_vocab, input_size=d_word_vec,
+                               hidden_size=d_model, context_size=d_model * 2,
                                dropout_rate=dropout, bridge_type=bridge_type)
 
         if tie_source_target_embedding:
             assert n_src_vocab == n_tgt_vocab, \
                 "source and target vocabulary should have equal size when tying source&target embedding"
-            self.encoder.embedding.embeddings.weight = self.decoder.embedding.embeddings.weight
+            self.encoder.embeddings.embeddings.weight = self.decoder.embeddings.embeddings.weight
 
         if tie_input_output_embedding is False:
             generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
         else:
             generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
-                                  shared_weight=self.decoder.embedding.embeddings.weight
-                                  )
+                                  shared_weight=self.decoder.embeddings.embeddings.weight)
         self.generator = generator
 
     def forward(self, src_seq, tgt_seq, log_probs=True):
@@ -246,7 +248,7 @@ class DL4MT(NMTModel):
                                  context_mask=ctx_mask,
                                  one_step=False,
                                  hidden=dec_init,
-                                 cache=dec_cache)  # [tgt_len, batch_size, dim]
+                                 cache=dec_cache)  # [batch_size, tgt_len, dim]
 
         return self.generator(logits, log_probs)
 
