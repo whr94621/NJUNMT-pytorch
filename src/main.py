@@ -776,6 +776,7 @@ def train(flags):
 
                 if training_progress_bar is not None:
                     training_progress_bar.update(grad_denom)
+                    training_progress_bar.set_description(' - (Epc {}, Upd {}) '.format(eidx, uidx))
 
                 # 2. learning rate scheduling
                 if scheduler is not None and optimizer_configs["schedule_method"] != "loss":
