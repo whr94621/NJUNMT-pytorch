@@ -660,11 +660,6 @@ def train(flags):
     else:
         ma = None
 
-    # 7. Build meters
-    train_loss_meter = AverageMeter()
-    sent_per_sec_meter = TimeMeter()
-    tok_per_sec_meter = TimeMeter()
-
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # Reload from latest checkpoint
@@ -673,11 +668,7 @@ def train(flags):
                                      optim=optim,
                                      lr_scheduler=scheduler,
                                      collections=model_collections,
-                                     ma=ma,
-                                     train_loss_meter=train_loss_meter,
-                                     sent_per_sec_meter=sent_per_sec_meter,
-                                     tok_per_sec_meter=tok_per_sec_meter
-                                     )
+                                     ma=ma)
 
     # broadcast parameters and optimizer states
     if world_size > 1:
@@ -694,6 +685,10 @@ def train(flags):
     uidx = model_collections.get_collection("uidx", [1])[-1]
     bad_count = model_collections.get_collection("bad_count", [0])[-1]
     oom_count = model_collections.get_collection("oom_count", [0])[-1]
+
+    train_loss_meter = AverageMeter()
+    sent_per_sec_meter = TimeMeter()
+    tok_per_sec_meter = TimeMeter()
 
     update_cycle = training_configs['update_cycle']
     grad_denom = 0
@@ -814,8 +809,10 @@ def train(flags):
                     summary_writer.add_scalar("lrate", scalar_value=lrate, global_step=uidx)
                     summary_writer.add_scalar("oom_count", scalar_value=oom_count, global_step=uidx)
 
-                # Reset timer
-                timer.tic()
+                # Reset Meters
+                sent_per_sec_meter.reset()
+                tok_per_sec_meter.reset()
+                train_loss_meter.reset()
 
             # ================================================================================== #
             # Loss Validation & Learning rate annealing

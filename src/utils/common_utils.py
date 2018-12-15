@@ -316,6 +316,10 @@ class Meter(object):
     def sum(self):
         return self.ave * self.denom
 
+    def reset(self):
+        self.ave = 0.0
+        self.denom = 0.0
+
 
 class AverageMeter(Meter):
     """Compute and storage the average of some value."""
