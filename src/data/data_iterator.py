@@ -24,6 +24,7 @@ import itertools
 import random
 from itertools import count
 from typing import Iterable, Generator
+from typing import List
 
 import numpy as np
 
@@ -35,6 +36,11 @@ __all__ = [
 ]
 
 random.seed(GlobalNames.SEED)
+
+
+def argsort(seq: List):
+    return [p[0] for p in sorted([(i, e) for i, e in enumerate(seq)], key=lambda p: p[1])]
+
 
 class Batch(object):
     """
@@ -114,22 +120,8 @@ def fill_buffer(data_iter, buffer_size):
     """
     Initialize a buffer from a iterator
     """
-    records = []
 
-    n_samples = 0
-
-    while True:
-        try:
-            record = next(data_iter)
-        except StopIteration:
-            break
-
-        records.append(record)
-
-        n_samples += 1
-
-        if n_samples >= buffer_size:
-            break
+    records = list(itertools.islice(data_iter, buffer_size))
 
     return records
 
@@ -179,58 +171,66 @@ def split_shards_iterator(iterator: Iterable[Record], number_shards, n_shard) ->
         yield item
 
 
-def bucket_iterator(iterator: Iterable[Record], buffer_size) -> Generator[Record, None, None]:
+def batching_iterator(iterator: Iterable[Record], batch_size, batching_key,
+                      use_bucket=False, buffer_size=10000) -> Generator[Batch, None, None]:
     buffer = []
+    batch = []  # buffer for building a batch, save the indices of records in the buffer
 
     while True:
+        # allocate a buffer for bucketing, merge unbatched records from last iteration
+        # new buffer is composed of residual elements in previous batch
+        # and newly allocated buffer
 
-        # 1. fill buffer
-        if len(buffer) == 0:
-            _inc_buffer = fill_buffer(iterator, buffer_size=buffer_size)
+        buffer_inc = fill_buffer(iterator, buffer_size=buffer_size - len(batch))
 
-            if len(_inc_buffer) == 0:
-                break
-            else:
-                buffer = buffer + _inc_buffer
-
-            # 2. Sorting buffer
-            scores = np.array([record.index for record in buffer])
-            noisy_scores = add_noise_to_length(scores)
-            sorted_indices = np.argsort(noisy_scores).tolist()
-            buffer = [buffer[i] for i in sorted_indices]
-
-        yield buffer.pop(0)
-
-
-def batching_iterator(iterator: Iterable[Record], batch_size, batching_key) -> Generator[Batch, None, None]:
-    batch_buffer = []
-
-    num_samples = 0
-    max_tokens_per_sample = 0
-
-    for item in iterator:
-        batch_buffer.append(item)
-        num_samples += 1
-
-        if batching_key == "samples":
-
-            if num_samples >= batch_size:
-                yield Batch.pack(*batch_buffer)
-
-                num_samples = 0
-                batch_buffer = []
+        if len(buffer_inc) == 0:
+            break
         else:
-            max_tokens_per_sample = max(max_tokens_per_sample, item.index)
+            buffer = [buffer[idx] for idx in batch] + buffer_inc
+            del buffer_inc
+            batch = []
 
-            if max_tokens_per_sample * num_samples >= batch_size:
-                yield Batch.pack(*batch_buffer)
+        num_samples = 0
+        max_token_per_batch = 0
 
-                num_samples = 0
-                max_tokens_per_sample = 0
-                batch_buffer = []
+        # If use bucketing
+        # sort records in buffer by size
+        if use_bucket:
+            sorted_indices = argsort([record.index for record in buffer])
+        else:
+            sorted_indices = list(range(len(buffer)))
 
-    if len(batch_buffer) > 0:
-        yield Batch.pack(*batch_buffer)
+        # batching records in the buffer
+        batch_queue = []
+        for idx in sorted_indices:
+
+            batch.append(idx)
+            num_samples += 1
+
+            if batching_key == "samples":
+                if num_samples >= batch_size:
+                    batch_queue.append(batch[:])
+                    num_samples = 0
+                    batch = []
+            else:
+                max_token_per_batch = max(max_token_per_batch, buffer[idx].index)
+
+                if max_token_per_batch * num_samples >= batch_size:
+                    batch_queue.append(batch[:])
+                    num_samples = 0
+                    max_token_per_batch = 0
+                    batch = []
+
+        # shuffle the order of batches
+        random.shuffle(batch_queue)
+
+        for _batch in batch_queue:
+            yield Batch.pack(*[buffer[idx] for idx in _batch])
+
+        batch_queue = []
+
+    if len(batch) > 0:
+        yield Batch.pack(*[buffer[idx] for idx in batch])
 
 
 class DataIterator(object):
@@ -259,7 +259,7 @@ class DataIterator(object):
             batch_size: Integer. Size of a batch. When batching_key is "samples", it represents the
                 the number of samples. When batching_key is "tokens", it represents the tokens in a batch.
             use_bucket: Boolean value. Whether to use bucket.
-            batching_key: Criterion to allocate a batch. Can only be "samples" or "tokens"
+            2batching_key: Criterion to allocate a batch. Can only be "samples" or "tokens"
             buffer_size: How many samples can be stored in memory for buffer. There are two places which need buffer--
                 shuffle_iterator and bucket_iterator, so the actual memory consumption would be two times if you enable
                 this two iterators at the same time.
@@ -328,12 +328,10 @@ class DataIterator(object):
         if self.shuffle:
             data_iter = shuffle_iterator(data_iter, buffer_size=self.buffer_size)
 
-        # 5. bucketing (optional)
-        if self.use_bucket:
-            data_iter = bucket_iterator(data_iter, buffer_size=self.buffer_size)
+        # 5. bucketing (optional) & batching
 
-        # 5. batching
-        data_iter = batching_iterator(data_iter, batch_size=self.batch_size, batching_key=self._batching_key)
+        data_iter = batching_iterator(data_iter, batch_size=self.batch_size, batching_key=self._batching_key,
+                                      use_bucket=self.use_bucket, buffer_size=self.buffer_size)
 
         self.data_iter = data_iter
 
