@@ -55,6 +55,7 @@ def default_base_configs():
             "shuffle": False,
             "use_bucket": True,
             "batching_key": "samples",
+            "buffer_size": 5000,
             "update_cycle": 1,
             "norm_by_words": False,
             "num_kept_checkpoints": 1,

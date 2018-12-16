@@ -561,7 +561,7 @@ def train(flags):
     training_iterator = DataIterator(dataset=train_bitext_dataset,
                                      batch_size=training_configs["batch_size"],
                                      use_bucket=training_configs['use_bucket'],
-                                     buffer_size=flags.buffer_size,
+                                     buffer_size=training_configs['buffer_size'],
                                      batching_func=training_configs['batching_key'],
                                      world_size=world_size,
                                      rank=rank)
