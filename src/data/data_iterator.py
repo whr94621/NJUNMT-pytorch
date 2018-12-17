@@ -79,43 +79,6 @@ class Batch(object):
         return cls(*records)
 
 
-def batching(records, batch_size, batching_key):
-    batches = []
-    batch_buffer = []
-
-    num_samples = 0
-
-    if batching_key == "samples":
-        for record in records:
-            batch_buffer.append(record)
-            num_samples += 1
-
-            if num_samples >= batch_size:
-                batches.append(Batch.pack(*batch_buffer))
-
-                num_samples = 0
-                batch_buffer = []
-    else:
-        max_len = 0
-        for record in records:
-            batch_buffer.append(record)
-
-            num_samples += 1
-            max_len = max(max_len, record.index)
-
-            if max_len * num_samples >= batch_size:
-                batches.append(Batch.pack(*batch_buffer))
-
-                num_samples = 0
-                max_len = 0
-                batch_buffer = []
-
-    if len(batch_buffer) > 0:
-        batches.append(Batch.pack(*batch_buffer))
-
-    return batches
-
-
 def fill_buffer(data_iter, buffer_size):
     """
     Initialize a buffer from a iterator
@@ -124,19 +87,6 @@ def fill_buffer(data_iter, buffer_size):
     records = list(itertools.islice(data_iter, buffer_size))
 
     return records
-
-
-def add_noise_to_length(lengths, noise=1.0):
-    """Add noise to the length of sequences.
-
-    Args:
-        lengths: The length of sequences.
-        noise_ratio: The ratio to add noise to the lengths.
-    """
-
-    noisy_lengths = [l + np.random.uniform(- noise, noise) for l in lengths]
-
-    return noisy_lengths
 
 
 def numbering_records_iterator(record_iter: Iterable[Record]):
@@ -148,7 +98,7 @@ def numbering_records_iterator(record_iter: Iterable[Record]):
         except StopIteration:
             break
 
-        yield zip_records(Record(ii, index=-float('inf')), record)
+        yield zip_records(Record(ii, size=-float('inf')), record)
 
 
 def shuffle_iterator(iterator: Iterable[Record], buffer_size) -> Generator[Record, None, None]:
@@ -196,7 +146,7 @@ def batching_iterator(iterator: Iterable[Record], batch_size, batching_key,
         # If use bucketing
         # sort records in buffer by size
         if use_bucket:
-            sorted_indices = argsort([record.index for record in buffer])
+            sorted_indices = argsort([record.size for record in buffer])
         else:
             sorted_indices = list(range(len(buffer)))
 
@@ -213,7 +163,7 @@ def batching_iterator(iterator: Iterable[Record], batch_size, batching_key,
                     num_samples = 0
                     batch = []
             else:
-                max_token_per_batch = max(max_token_per_batch, buffer[idx].index)
+                max_token_per_batch = max(max_token_per_batch, buffer[idx].size)
 
                 if max_token_per_batch * num_samples >= batch_size:
                     batch_queue.append(batch[:])
@@ -301,14 +251,6 @@ class DataIterator(object):
     def __len__(self):
         return len(self.dataset)
 
-    @property
-    def n_datasets(self):
-        return self.dataset.n_fields
-
-    @property
-    def is_end(self):
-        return self._end
-
     def reset(self):
 
         self.buffer = []
@@ -334,8 +276,6 @@ class DataIterator(object):
                                       use_bucket=self.use_bucket, buffer_size=self.buffer_size)
 
         self.data_iter = data_iter
-
-        self._end = False
 
     def build_generator(self, batch_size=None):
 

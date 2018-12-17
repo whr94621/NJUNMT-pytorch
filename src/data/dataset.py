@@ -53,23 +53,15 @@ class Record(object):
     ```key``` is used in bucketing, the larger of which means the size of the data.
     ```
     """
-    __slots__ = ("fields", "index")
+    __slots__ = ("fields", "size")
 
-    def __init__(self, *fields, index):
+    def __init__(self, *fields, size):
         self.fields = fields
-        self.index = index
+        self.size = size
 
     @property
     def n_fields(self):
         return len(self.fields)
-
-    def __getstate__(self):
-        return {"fields": self.fields, "index": self.index}
-
-    def __setstate__(self, state):
-        self.fields = state['fields']
-        self.index = state['index']
-
 
 def zip_records(*records: Record):
     """
@@ -77,13 +69,13 @@ def zip_records(*records: Record):
     maximum of previous keys.
     """
     new_fields = ()
-    indices = []
+    sizes = []
 
     for r in records:
         new_fields += r.fields
-        indices.append(r.index)
+        sizes.append(r.size)
 
-    return Record(*new_fields, index=max(indices))
+    return Record(*new_fields, size=max(sizes))
 
 
 class Dataset(object):
@@ -183,7 +175,7 @@ class TextLineDataset(Dataset):
         if 0 < self._max_len < len(line):
             return None
 
-        return Record(line, index=len(line))
+        return Record(line, size=len(line))
 
 
 class ZipDataset(Dataset):
