@@ -728,6 +728,13 @@ def translate(FLAGS):
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
+    bleu_scorer = SacreBLEUScorer(reference_path=FLAGS.reference_path,
+                                  num_refs=FLAGS.num_refs,
+                                  lang_pair=data_configs["lang_pair"],
+                                  sacrebleu_args="",
+                                  postprocess=True
+                                  )
+
     # ================================================================================== #
     # Build Model & Sampler & Validation
     INFO('Building model...')
@@ -817,6 +824,10 @@ def translate(FLAGS):
                     handles[i].write('%s\n' % trans[i])
                 else:
                     handles[i].write('%s\n' % 'eos')
+
+    with open(outputs[0]) as f:
+        bleu_v = bleu_scorer.corpus_bleu(f)
+        INFO('Done. BLEU Score: {0:.2f}'.format(bleu_v))
 
 
 def ensemble_translate(FLAGS):
