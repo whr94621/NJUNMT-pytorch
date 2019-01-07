@@ -1,6 +1,8 @@
 import argparse
+import os
 
 from src.main import translate
+from . import auto_mkdir
 
 parser = argparse.ArgumentParser()
 
@@ -42,12 +44,15 @@ parser.add_argument("--multi_gpu", action="store_true",
 parser.add_argument("--shared_dir", type=str, default=None,
                     help="""Shared directory across nodes. Default is '/tmp'""")
 
+
 def run(**kwargs):
     args = parser.parse_args()
 
     # Modify some options.
     for k, v in kwargs.items():
         setattr(args, k, v)
+
+    auto_mkdir(os.path.dirname(args.saveto))
 
     translate(args)
 

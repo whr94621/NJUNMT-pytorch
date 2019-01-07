@@ -21,8 +21,10 @@
 # SOFTWARE.
 
 import argparse
+import os
 
 from src.main import ensemble_translate
+from . import auto_mkdir
 
 parser = argparse.ArgumentParser()
 
@@ -72,6 +74,7 @@ def run(**kwargs):
     for k, v in kwargs.items():
         setattr(args, k, v)
 
+    auto_mkdir(os.path.dirname(args.saveto))
     ensemble_translate(args)
 
 
