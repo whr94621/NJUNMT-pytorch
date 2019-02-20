@@ -28,9 +28,9 @@ import torch.nn.functional as F
 from src.data.vocabulary import PAD
 from src.decoding.utils import tile_batch, tensor_gather_helper
 from src.models.base import NMTModel
+from src.modules.attention import MultiHeadedAttention
 from src.modules.basic import BottleLinear as Linear
 from src.modules.embeddings import Embeddings
-from src.modules.sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from src.utils import nest
 
 
@@ -49,44 +49,150 @@ def get_attn_causal_mask(seq):
     return subsequent_mask
 
 
+class PositionwiseFeedForward(nn.Module):
+    """
+    A two-layer Feed-Forward-Network with residual layer norm.
+
+    Args:
+        size (int): the size of input for the first-layer of the FFN.
+        hidden_size (int): the hidden layer size of the second-layer
+                          of the FNN.
+        dropout (float): dropout probability(0-1.0).
+    """
+
+    def __init__(self, size, hidden_size, dropout=0.1):
+        super(PositionwiseFeedForward, self).__init__()
+        self.w_1 = nn.Linear(size, hidden_size)
+        self.w_2 = nn.Linear(hidden_size, size)
+        # Save a little memory, by doing inplace.
+        self.dropout = nn.Dropout(dropout)
+        self.relu = nn.ReLU(inplace=False)
+
+    def forward(self, x):
+        return self.w_2(self.dropout(self.relu(self.w_1(x))))
+
+
+class SubBlock(nn.Module):
+
+    def __init__(self, size, dropout, layer_norm_first=True):
+        super().__init__()
+
+        self.layer_norm_first = layer_norm_first
+
+        self.layer_norm = nn.LayerNorm(size)
+        self.dropout = nn.Dropout(dropout)
+
+    def _transform(self, *args, **kwargs):
+
+        raise NotImplementedError
+
+    def forward(self, x, *args, **kwargs):
+
+        # 1. layer normalization
+        if self.layer_norm_first:
+            transform_input = self.layer_norm(x)
+        else:
+            transform_input = x
+
+        # 2. transformation
+        output = self._transform(transform_input, *args, **kwargs)
+
+        # 3. dropout & residual add
+        if not isinstance(output, tuple):
+            output = x + self.dropout(output)
+            if not self.layer_norm_first:
+                output = self.layer_norm(output)
+        else:
+            output = (x + self.dropout(output[0]),) + output[1:]
+            if not self.layer_norm_first:
+                output = (self.layer_norm(output[0]),) + output[1:]
+
+        return output
+
+
+class SelfAttentionSubBlock(SubBlock):
+
+    def __init__(self, model_dim, head_count, dim_per_head=None, dropout=0.1, attn_dropout=0.1, layer_norm_firs=True):
+        super().__init__(model_dim, dropout=dropout, layer_norm_first=layer_norm_firs)
+
+        self.transform_layer = MultiHeadedAttention(model_dim=model_dim, head_count=head_count,
+                                                    dim_per_head=dim_per_head, dropout=attn_dropout)
+
+    def _transform(self, x, mask=None, self_attn_cache=None):
+        return self.transform_layer(x, x, x, mask=mask, self_attn_cache=self_attn_cache)
+
+
+class EncoderAttentionBlock(SubBlock):
+
+    def __init__(self, model_dim, head_count, dim_per_head=None, dropout=0.1, attn_dropout=0.1, layer_norm_first=True):
+        super().__init__(model_dim, dropout=dropout, layer_norm_first=layer_norm_first)
+
+        self.transform_layer = MultiHeadedAttention(model_dim=model_dim, head_count=head_count,
+                                                    dim_per_head=dim_per_head, dropout=attn_dropout)
+
+    def _transform(self, dec_hidden, context, mask=None, enc_attn_cache=None):
+        return self.transform_layer(context, context, dec_hidden, mask=mask, enc_attn_cache=enc_attn_cache)
+
+
+class PositionwiseFeedForwardSubBlock(SubBlock):
+
+    def __init__(self, size, hidden_size, dropout=0.1, layer_norm_first=True):
+        super().__init__(size=size, dropout=dropout, layer_norm_first=layer_norm_first)
+
+        self.transform_layer = PositionwiseFeedForward(size=size, hidden_size=hidden_size, dropout=dropout)
+
+    def _transform(self, x):
+        return self.transform_layer(x)
+
+
 class EncoderBlock(nn.Module):
 
-    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1):
+    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True):
         super(EncoderBlock, self).__init__()
 
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.slf_attn = SelfAttentionSubBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                              dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
 
-        self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout,
-                                             dim_per_head=dim_per_head)
-
-        self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid, dropout=dropout)
+        self.pos_ffn = PositionwiseFeedForwardSubBlock(size=d_model, hidden_size=d_inner_hid, dropout=dropout,
+                                                       layer_norm_first=layer_norm_first)
 
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, enc_input, slf_attn_mask=None):
-        input_norm = self.layer_norm(enc_input)
-        context, _, _ = self.slf_attn(input_norm, input_norm, input_norm, slf_attn_mask)
-        out = self.dropout(context) + enc_input
+        context, _, _ = self.slf_attn(enc_input, mask=slf_attn_mask)
 
-        return self.pos_ffn(out)
+        return self.pos_ffn(context)
 
 
 class Encoder(nn.Module):
 
     def __init__(
             self, n_src_vocab, n_layers=6, n_head=8,
-            d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1, dim_per_head=None):
+            d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1, dim_per_head=None,
+            padding_idx=PAD, positional_embedding="sin", layer_norm_first=True):
         super().__init__()
 
+        self.scale = d_word_vec ** 0.5
         self.num_layers = n_layers
+        self.layer_norm_first = layer_norm_first
+
+        self.embeddings = nn.Embedding(
+            num_embeddings=n_src_vocab,
+            embedding_dim=d_word_vec,
+            padding_idx=padding_idx
+        )
+
+        self.embedding_dropout = nn.Dropout(dropout)
+
         self.embeddings = Embeddings(num_embeddings=n_src_vocab,
                                      embedding_dim=d_word_vec,
                                      dropout=dropout,
-                                     add_position_embedding=True
+                                     positional_embedding=positional_embedding
                                      )
+
         self.block_stack = nn.ModuleList(
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
-                          dim_per_head=dim_per_head)
+                          dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
              for _ in range(n_layers)])
 
         self.layer_norm = nn.LayerNorm(d_model)
@@ -100,12 +206,16 @@ class Encoder(nn.Module):
         enc_mask = src_seq.detach().eq(PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
 
+        if not self.layer_norm_first:
+            emb = self.layer_norm(emb)
+
         out = emb
 
         for i in range(self.num_layers):
             out = self.block_stack[i](out, enc_slf_attn_mask)
 
-        out = self.layer_norm(out)
+        if self.layer_norm_first:
+            out = self.layer_norm(out)
 
         return out, enc_mask
 
@@ -113,22 +223,18 @@ class Encoder(nn.Module):
 class DecoderBlock(nn.Module):
     ''' Compose with three layers '''
 
-    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1):
+    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True):
         super(DecoderBlock, self).__init__()
 
-        self.slf_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout,
-                                             dim_per_head=dim_per_head)
-        self.ctx_attn = MultiHeadedAttention(head_count=n_head, model_dim=d_model, dropout=dropout,
-                                             dim_per_head=dim_per_head)
-        self.pos_ffn = PositionwiseFeedForward(size=d_model, hidden_size=d_inner_hid)
+        self.slf_attn = SelfAttentionSubBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                              dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
+        self.ctx_attn = EncoderAttentionBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                              dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
 
-        self.layer_norm_1 = nn.LayerNorm(d_model)
-        self.layer_norm_2 = nn.LayerNorm(d_model)
+        self.pos_ffn = PositionwiseFeedForwardSubBlock(size=d_model, hidden_size=d_inner_hid,
+                                                       layer_norm_first=layer_norm_first)
 
         self.dropout = nn.Dropout(dropout)
-
-    def compute_cache(self, enc_output):
-        return self.ctx_attn.compute_cache(enc_output, enc_output)
 
     def forward(self, dec_input, enc_output, slf_attn_mask=None, dec_enc_attn_mask=None,
                 enc_attn_cache=None, self_attn_cache=None):
@@ -137,21 +243,14 @@ class DecoderBlock(nn.Module):
 
         contxt_batch, contxt_len, _ = enc_output.size()
 
-        input_norm = self.layer_norm_1(dec_input)
-        all_input = input_norm
+        query, _, self_attn_cache = self.slf_attn(dec_input, mask=slf_attn_mask, self_attn_cache=self_attn_cache)
 
-        query, _, self_attn_cache = self.slf_attn(all_input, all_input, input_norm,
-                                                  mask=slf_attn_mask, self_attn_cache=self_attn_cache)
+        attn_values, attn_weights, enc_attn_cache = self.ctx_attn(query, enc_output, mask=dec_enc_attn_mask,
+                                                                  enc_attn_cache=enc_attn_cache)
 
-        query = self.dropout(query) + dec_input
+        output = self.pos_ffn(attn_values)
 
-        query_norm = self.layer_norm_2(query)
-        mid, attn, enc_attn_cache = self.ctx_attn(enc_output, enc_output, query_norm,
-                                                  mask=dec_enc_attn_mask, enc_attn_cache=enc_attn_cache)
-
-        output = self.pos_ffn(self.dropout(mid) + query)
-
-        return output, attn, self_attn_cache, enc_attn_cache
+        return output, attn_weights, self_attn_cache, enc_attn_cache
 
 
 class Decoder(nn.Module):
@@ -159,20 +258,25 @@ class Decoder(nn.Module):
 
     def __init__(
             self, n_tgt_vocab, n_layers=6, n_head=8,
-            d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None, dropout=0.1):
+            d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None, dropout=0.1,
+            positional_embedding="sin", layer_norm_first=True, padding_idx=PAD):
 
         super(Decoder, self).__init__()
 
         self.n_head = n_head
         self.num_layers = n_layers
         self.d_model = d_model
+        self.layer_norm_first = layer_norm_first
 
         self.embeddings = Embeddings(n_tgt_vocab, d_word_vec,
-                                     dropout=dropout, add_position_embedding=True)
+                                     dropout=dropout,
+                                     positional_embedding=positional_embedding,
+                                     padding_idx=padding_idx
+                                     )
 
         self.block_stack = nn.ModuleList([
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
-                         dim_per_head=dim_per_head)
+                         dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
             for _ in range(n_layers)])
 
         self.out_layer_norm = nn.LayerNorm(d_model)
@@ -197,6 +301,9 @@ class Decoder(nn.Module):
 
         # Run the forward pass of the TransformerDecoder.
         emb = self.embeddings(tgt_seq)
+
+        if not self.layer_norm_first:
+            emb = self.out_layer_norm(emb)
 
         if self_attn_caches is not None:
             emb = emb[:, -1:].contiguous()
@@ -224,7 +331,8 @@ class Decoder(nn.Module):
             new_self_attn_caches += [self_attn_cache]
             new_enc_attn_caches += [enc_attn_cache]
 
-        output = self.out_layer_norm(output)
+        if self.layer_norm_first:
+            output = self.out_layer_norm(output)
 
         return output, new_self_attn_caches, new_enc_attn_caches
 
@@ -278,19 +386,22 @@ class Transformer(NMTModel):
     def __init__(
             self, n_src_vocab, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None,
-            dropout=0.1, tie_input_output_embedding=True, tie_source_target_embedding=False, **kwargs):
+            dropout=0.1, tie_input_output_embedding=True, tie_source_target_embedding=False, padding_idx=PAD,
+            layer_norm_first=True, positional_embedding="sin", **kwargs):
 
         super(Transformer, self).__init__()
 
         self.encoder = Encoder(
             n_src_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
-            d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head)
+            d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head,
+            padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding)
 
         self.decoder = Decoder(
             n_tgt_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
-            d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head)
+            d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head,
+            padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding)
 
         self.dropout = nn.Dropout(dropout)
 

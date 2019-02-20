@@ -106,6 +106,8 @@ if __name__ == '__main__':
     parser = test_utils.build_test_argparser()
     args = parser.parse_args()
 
+    test_utils.rm_tmp_dir(test_dir)
+
     if not os.path.exists(test_dir):
         os.makedirs(test_dir, exist_ok=True)
 
@@ -138,5 +140,3 @@ if __name__ == '__main__':
     test_transformer_ensemble_inference(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
-
-    test_utils.rm_tmp_dir(test_dir)

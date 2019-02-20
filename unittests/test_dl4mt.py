@@ -75,6 +75,8 @@ if __name__ == '__main__':
 
     test_dir = "./tmp"
 
+    test_utils.rm_tmp_dir(test_dir)
+
     if not os.path.exists(test_dir):
         os.makedirs(test_dir, exist_ok=True)
 
@@ -89,5 +91,3 @@ if __name__ == '__main__':
     test_dl4mt_inference(test_dir, use_gpu=args.use_gpu)
     INFO("Done.")
     INFO("=" * 20)
-
-    test_utils.rm_tmp_dir(test_dir)
