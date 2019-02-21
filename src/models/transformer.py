@@ -185,14 +185,6 @@ class Encoder(nn.Module):
         self.num_layers = n_layers
         self.layer_norm_first = layer_norm_first
 
-        self.embeddings = nn.Embedding(
-            num_embeddings=n_src_vocab,
-            embedding_dim=d_word_vec,
-            padding_idx=padding_idx
-        )
-
-        self.embedding_dropout = nn.Dropout(dropout)
-
         self.embeddings = Embeddings(num_embeddings=n_src_vocab,
                                      embedding_dim=d_word_vec,
                                      dropout=dropout,

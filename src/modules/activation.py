@@ -32,4 +32,4 @@ class GELU(nn.Module):
         super().__init__()
 
     def forward(self, input):
-        return 0.5 * input * (1.0 + torch.erf(x / math.sqrt(2.0)))
+        return 0.5 * input * (1.0 + torch.erf(input / math.sqrt(2.0)))

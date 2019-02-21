@@ -1,5 +1,11 @@
 from collections import OrderedDict
 
+__all__ = [
+    'NoamScheduler',
+    'ReduceOnPlateauScheduler',
+    'InverseSqrtWithWarmupScheduler'
+]
+
 
 class LearningRateScheduler(object):
     """ The base class of learning rate scheduler
@@ -120,3 +126,45 @@ class ReduceOnPlateauScheduler(LearningRateScheduler):
                 new_lr = old_lr * self.scale
                 self._state["bad_count"] = 0
                 return new_lr
+
+
+class InverseSqrtWithWarmupScheduler(LearningRateScheduler):
+    """
+    0~warmup_steps: linear increase. If warmup_steps is None, hold initial learning rate.
+    warmup_steps~decay_steps: hold current learning rate.
+    decay_steps~ : learning rate decay as an inverse sqrt function.
+    """
+
+    def __init__(self, optimizer, warmup_steps=None, decay_steps=None, min_lr=-1.0, init_lr=1e-7):
+
+        super(InverseSqrtWithWarmupScheduler, self).__init__(optimizer=optimizer, min_lr=min_lr)
+
+        if warmup_steps is None:
+            warmup_steps = 1
+        if decay_steps is None:
+            decay_steps = float('inf')
+
+        self.warmup_steps = warmup_steps
+        self.decay_steps = decay_steps
+
+        self.init_lr = init_lr
+
+        if self.warmup_steps > 1:
+            self._bias = (self.init_lr * self.warmup_steps - self.max_lr) / (self.warmup_steps - 1)
+        else:
+            self._bias = 0.0
+
+        self.step(global_step=1)
+
+    @property
+    def max_lr(self):
+        return self.optimizer.init_lr
+
+    def update_lr(self, old_lr, global_step, **kwargs):
+        if global_step <= self.warmup_steps:
+
+            return global_step * (self.max_lr - self._bias) / self.warmup_steps + self._bias
+        elif self.warmup_steps < global_step <= self.decay_steps:
+            return self.max_lr
+        else:
+            return self.max_lr * ((self.decay_steps / global_step) ** 0.5)

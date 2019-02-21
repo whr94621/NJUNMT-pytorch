@@ -18,7 +18,7 @@ from src.metric.bleu_scorer import SacreBLEUScorer
 from src.models import build_model
 from src.modules.criterions import NMTCriterion
 from src.optim import Optimizer
-from src.optim.lr_scheduler import ReduceOnPlateauScheduler, NoamScheduler
+from src.optim.lr_scheduler import *
 from src.utils.common_utils import *
 from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
@@ -47,6 +47,20 @@ def set_seed(seed):
     np.random.seed(seed)
 
     torch.backends.cudnn.deterministic = True
+
+
+def build_scheduler(schedule_method: str, optimizer: Optimizer, scheduler_configs: dict):
+    if schedule_method is None:
+        return None
+    elif schedule_method == "loss":
+        return ReduceOnPlateauScheduler(optimizer=optimizer, **scheduler_configs)
+    elif schedule_method == "noam":
+        return NoamScheduler(optimizer=optimizer, **scheduler_configs)
+    elif schedule_method == "isqrt":
+        return InverseSqrtWithWarmupScheduler(optimizer=optimizer, **scheduler_configs)
+    else:
+        WARN("Unknown scheduler name {0}. Do not use lr_scheduling.".format(schedule_method))
+        return None
 
 
 def load_model_parameters(path, map_location="cpu"):
@@ -415,8 +429,15 @@ def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None)
         exclude_prefix = []
     if pretrain_path != "":
         INFO("Loading pretrained model from {}".format(pretrain_path))
+
+        all_parameter_names = set([name for name in nmt_model.state_dict().keys()])
+
         pretrain_params = torch.load(pretrain_path, map_location=device)
         for name, params in pretrain_params.items():
+
+            if name not in all_parameter_names:
+                continue
+
             flag = False
             for pp in exclude_prefix:
                 if name.startswith(pp):
@@ -424,6 +445,7 @@ def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None)
                     break
             if flag:
                 continue
+
             INFO("Loading param: {}...".format(name))
             try:
                 nmt_model.load_state_dict({name: params}, strict=False)
@@ -612,21 +634,8 @@ def train(flags):
                                           )
 
     # 5. Build scheduler for optimizer if needed
-    if optimizer_configs['schedule_method'] is not None:
-
-        if optimizer_configs['schedule_method'] == "loss":
-
-            scheduler = ReduceOnPlateauScheduler(optimizer=optim,
-                                                 **optimizer_configs["scheduler_configs"]
-                                                 )
-
-        elif optimizer_configs['schedule_method'] == "noam":
-            scheduler = NoamScheduler(optimizer=optim, **optimizer_configs['scheduler_configs'])
-        else:
-            WARN("Unknown scheduler name {0}. Do not use lr_scheduling.".format(optimizer_configs['schedule_method']))
-            scheduler = None
-    else:
-        scheduler = None
+    scheduler = build_scheduler(schedule_method=optimizer_configs['schedule_method'],
+                                optimizer=optim, scheduler_configs=optimizer_configs['scheduler_configs'])
 
     # 6. build moving average
 
