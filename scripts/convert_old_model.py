@@ -42,6 +42,9 @@ def convert_transformer_names(name: str):
         name = name.replace("ctx_attn", "ctx_attn.transform_layer")
         name = name.replace("pos_ffn", "pos_ffn.transform_layer")
     else:
+        if "out_layer_norm" in name:
+            name = name.replace("out_layer_norm", "layer_norm")
+
         # rename layer normalization in decoder block
         if "layer_norm_1" in name:
             name = name.replace("layer_norm_1", "slf_attn.layer_norm")

@@ -28,6 +28,7 @@ import torch.nn.functional as F
 from src.data.vocabulary import PAD
 from src.decoding.utils import tile_batch, tensor_gather_helper
 from src.models.base import NMTModel
+from src.modules.activation import GELU
 from src.modules.attention import MultiHeadedAttention
 from src.modules.basic import BottleLinear as Linear
 from src.modules.embeddings import Embeddings
@@ -60,16 +61,22 @@ class PositionwiseFeedForward(nn.Module):
         dropout (float): dropout probability(0-1.0).
     """
 
-    def __init__(self, size, hidden_size, dropout=0.1):
+    def __init__(self, size, hidden_size, dropout=0.1, activation="relu"):
         super(PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(size, hidden_size)
         self.w_2 = nn.Linear(hidden_size, size)
         # Save a little memory, by doing inplace.
         self.dropout = nn.Dropout(dropout)
-        self.relu = nn.ReLU(inplace=False)
+
+        if activation == "relu":
+            self.activation = nn.ReLU(inplace=False)
+        elif activation == "gelu":
+            self.activation = GELU()
+        else:
+            raise ValueError
 
     def forward(self, x):
-        return self.w_2(self.dropout(self.relu(self.w_1(x))))
+        return self.w_2(self.dropout(self.activation(self.w_1(x))))
 
 
 class SubBlock(nn.Module):
@@ -136,10 +143,11 @@ class EncoderAttentionBlock(SubBlock):
 
 class PositionwiseFeedForwardSubBlock(SubBlock):
 
-    def __init__(self, size, hidden_size, dropout=0.1, layer_norm_first=True):
+    def __init__(self, size, hidden_size, dropout=0.1, layer_norm_first=True, activation="relu"):
         super().__init__(size=size, dropout=dropout, layer_norm_first=layer_norm_first)
 
-        self.transform_layer = PositionwiseFeedForward(size=size, hidden_size=hidden_size, dropout=dropout)
+        self.transform_layer = PositionwiseFeedForward(size=size, hidden_size=hidden_size, dropout=dropout,
+                                                       activation=activation)
 
     def _transform(self, x):
         return self.transform_layer(x)
@@ -147,14 +155,15 @@ class PositionwiseFeedForwardSubBlock(SubBlock):
 
 class EncoderBlock(nn.Module):
 
-    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True):
+    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True,
+                 ffn_activation="relu"):
         super(EncoderBlock, self).__init__()
 
         self.slf_attn = SelfAttentionSubBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
                                               dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
 
         self.pos_ffn = PositionwiseFeedForwardSubBlock(size=d_model, hidden_size=d_inner_hid, dropout=dropout,
-                                                       layer_norm_first=layer_norm_first)
+                                                       layer_norm_first=layer_norm_first, activation=ffn_activation)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -169,7 +178,7 @@ class Encoder(nn.Module):
     def __init__(
             self, n_src_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1, dim_per_head=None,
-            padding_idx=PAD, positional_embedding="sin", layer_norm_first=True):
+            padding_idx=PAD, positional_embedding="sin", layer_norm_first=True, ffn_activation="relu"):
         super().__init__()
 
         self.scale = d_word_vec ** 0.5
@@ -192,7 +201,7 @@ class Encoder(nn.Module):
 
         self.block_stack = nn.ModuleList(
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
-                          dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
+                          dim_per_head=dim_per_head, layer_norm_first=layer_norm_first, ffn_activation=ffn_activation)
              for _ in range(n_layers)])
 
         self.layer_norm = nn.LayerNorm(d_model)
@@ -223,7 +232,8 @@ class Encoder(nn.Module):
 class DecoderBlock(nn.Module):
     ''' Compose with three layers '''
 
-    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True):
+    def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True,
+                 ffn_activation="relu"):
         super(DecoderBlock, self).__init__()
 
         self.slf_attn = SelfAttentionSubBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
@@ -232,7 +242,7 @@ class DecoderBlock(nn.Module):
                                               dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
 
         self.pos_ffn = PositionwiseFeedForwardSubBlock(size=d_model, hidden_size=d_inner_hid,
-                                                       layer_norm_first=layer_norm_first)
+                                                       layer_norm_first=layer_norm_first, activation=ffn_activation)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -259,7 +269,7 @@ class Decoder(nn.Module):
     def __init__(
             self, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None, dropout=0.1,
-            positional_embedding="sin", layer_norm_first=True, padding_idx=PAD):
+            positional_embedding="sin", layer_norm_first=True, padding_idx=PAD, ffn_activation="relu"):
 
         super(Decoder, self).__init__()
 
@@ -276,10 +286,10 @@ class Decoder(nn.Module):
 
         self.block_stack = nn.ModuleList([
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
-                         dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
+                         dim_per_head=dim_per_head, layer_norm_first=layer_norm_first, ffn_activation=ffn_activation)
             for _ in range(n_layers)])
 
-        self.out_layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = nn.LayerNorm(d_model)
 
         self._dim_per_head = dim_per_head
 
@@ -303,7 +313,7 @@ class Decoder(nn.Module):
         emb = self.embeddings(tgt_seq)
 
         if not self.layer_norm_first:
-            emb = self.out_layer_norm(emb)
+            emb = self.layer_norm(emb)
 
         if self_attn_caches is not None:
             emb = emb[:, -1:].contiguous()
@@ -332,21 +342,21 @@ class Decoder(nn.Module):
             new_enc_attn_caches += [enc_attn_cache]
 
         if self.layer_norm_first:
-            output = self.out_layer_norm(output)
+            output = self.layer_norm(output)
 
         return output, new_self_attn_caches, new_enc_attn_caches
 
 
 class Generator(nn.Module):
 
-    def __init__(self, n_words, hidden_size, shared_weight=None, padding_idx=-1):
+    def __init__(self, n_words, hidden_size, shared_weight=None, padding_idx=-1, add_bias=False):
         super(Generator, self).__init__()
 
         self.n_words = n_words
         self.hidden_size = hidden_size
         self.padding_idx = padding_idx
 
-        self.proj = Linear(self.hidden_size, self.n_words, bias=False)
+        self.proj = Linear(self.hidden_size, self.n_words, bias=add_bias)
 
         if shared_weight is not None:
             self.proj.linear.weight = shared_weight
@@ -387,7 +397,7 @@ class Transformer(NMTModel):
             self, n_src_vocab, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None,
             dropout=0.1, tie_input_output_embedding=True, tie_source_target_embedding=False, padding_idx=PAD,
-            layer_norm_first=True, positional_embedding="sin", **kwargs):
+            layer_norm_first=True, positional_embedding="sin", generator_bias=False, ffn_activation="relu", **kwargs):
 
         super(Transformer, self).__init__()
 
@@ -395,13 +405,15 @@ class Transformer(NMTModel):
             n_src_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
             d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head,
-            padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding)
+            padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding,
+            ffn_activation=ffn_activation)
 
         self.decoder = Decoder(
             n_tgt_vocab, n_layers=n_layers, n_head=n_head,
             d_word_vec=d_word_vec, d_model=d_model,
             d_inner_hid=d_inner_hid, dropout=dropout, dim_per_head=dim_per_head,
-            padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding)
+            padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding,
+            ffn_activation=ffn_activation)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -418,10 +430,11 @@ class Transformer(NMTModel):
             self.generator = Generator(n_words=n_tgt_vocab,
                                        hidden_size=d_word_vec,
                                        shared_weight=self.decoder.embeddings.embeddings.weight,
-                                       padding_idx=PAD)
+                                       padding_idx=PAD, add_bias=generator_bias)
 
         else:
-            self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
+            self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
+                                       add_bias=generator_bias)
 
     def forward(self, src_seq, tgt_seq, log_probs=True):
 

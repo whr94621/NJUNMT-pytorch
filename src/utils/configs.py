@@ -106,6 +106,9 @@ def default_transformer_configs(default_configs):
     default_configs['model_configs']['d_inner_hid'] = 2048
     default_configs['model_configs']['dropout'] = 0.1
     default_configs['model_configs']['label_smoothing'] = 0.1
+    default_configs['model_configs']['layer_norm_first'] = True
+    default_configs['model_configs']['positional_embedding'] = "sin"
+    default_configs['model_configs']['ffn_activation'] = "relu"
 
     # Add compatible optimizer configs
     default_configs['optimizer_configs']['optimizer'] = "adam"
