@@ -17,17 +17,24 @@ only pytorch implementation which is exactly the same as original model.([nmtpyt
 mechanism.
 
 ## Table of Contents
+
+<!-- toc -->
+
 - [NJUNMT-pytorch](#njunmt-pytorch)
-    - [Table of Contents](#table-of-contents)
-    - [Requirements](#requirements)
-    - [Usage](#usage)
-        - [0. Quick Start](#0-quick-start)
-        - [1. Build Vocabulary](#1-build-vocabulary)
-        - [2. Write Configuration File](#2-write-configuration-file)
-        - [3. Training](#3-training)
-        - [4. Translation](#4-translation)
-    - [Benchmark](#benchmark)
-    - [Contact](#contact)
+  - [English, 中文](#english-%E4%B8%AD%E6%96%87)
+  - [Table of Contents](#table-of-contents)
+  - [Requirements](#requirements)
+  - [Usage](#usage)
+    - [0. Quick Start](#0-quick-start)
+    - [1. Build Vocabulary](#1-build-vocabulary)
+    - [2. Write Configuration File](#2-write-configuration-file)
+    - [3. Training](#3-training)
+    - [4. Translation](#4-translation)
+  - [Multi-GPU](#multi-gpu)
+  - [Benchmark](#benchmark)
+  - [Contact](#contact)
+
+<!-- tocstop -->
 
 ## Requirements
 
@@ -127,6 +134,10 @@ python -m src.bin.translate \
 See detail options by running ```python -m src.bin.translate --help```.
 
 Also our code support ensemble decoding. See more options by running ```python -m src.bin.ensemble_translate --help```
+
+## Multi-GPU
+
+See [distributed.md](./docs/en/distributed.md)
 
 ## Benchmark
 

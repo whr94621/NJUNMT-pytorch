@@ -107,6 +107,7 @@ def main():
             cmd.append("-m")
         cmd.append(args.training_script)
         cmd += args.training_script_args
+        cmd += ["--multi_gpu", ]
 
         process = subprocess.Popen(cmd, env=current_env)
         processes.append(process)
