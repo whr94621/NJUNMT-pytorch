@@ -24,18 +24,24 @@ import os
 import pickle
 import uuid
 
-import horovod.torch as hvd
 import torch
+import torch.distributed as dist
+
+from . import DEFAULT_SHARED_DIR, _get_default_group, _dist_broadcast_coalesced
 
 __all__ = [
-    'init',
-    'all_gather_py',
-    'all_reduce_py',
     'broadcast_py',
-    'all_gather_py_with_shared_fs'
+    'broadcast_parameters',
+    'all_reduce',
+    'all_reduce_py',
+    'all_gather_py',
+    'all_gather_py_with_shared_fs',
+    'broadcast',
+    'barrier',
+    'get_local_rank',
+    'get_world_size',
+    'get_rank'
 ]
-
-_DEFAULT_SHARED_DIR = "/tmp"
 
 
 def item(tensor):
@@ -46,18 +52,40 @@ def item(tensor):
     return tensor
 
 
-def init(shared_fs_path=None):
-    global _DEFAULT_SHARED_DIR
-    hvd.init()
-
-    if shared_fs_path is not None:
-        _DEFAULT_SHARED_DIR = shared_fs_path
+def all_reduce(tensor, group=None):
+    if group is None:
+        group = _get_default_group()
+    return dist.all_reduce(tensor, group=group)
 
 
-def all_gather_py(data, max_size=65000):
-    """ Gathers arbitrary data from all nodes into a list.
+def broadcast(tensor, root_rank=0, group=None):
+    if group is None:
+        group = _get_default_group()
 
-    This function is heavily borrowed from fairseq (https://github.com/pytorch/fairseq)
+    dist.broadcast(tensor, root_rank, group=group)
+
+
+def barrier(group=None):
+    if group is None:
+        group = _get_default_group()
+
+    dist.barrier(group=group)
+
+
+def all_reduce_py(data, max_size=65000, average=False, group=None):
+    """Apply allreduce to python objects"""
+    all_gathered_data = all_gather_py(data=data, max_size=max_size, group=group)
+
+    result = sum(all_gathered_data)
+
+    if not average:
+        return result
+    else:
+        return result / all(all_gathered_data)
+
+
+def all_gather_py(data, group=None, max_size=16384):
+    """Gathers arbitrary data from all nodes into a list.
 
     Similar to :func:`~torch.distributed.all_gather` but for arbitrary Python
     data. Note that *data* must be picklable.
@@ -68,54 +96,51 @@ def all_gather_py(data, max_size=65000):
         max_size (int, optional): maximum size of the data to be gathered
             across workers
     """
+    rank = get_rank()
+    world_size = get_world_size()
 
-    world_size = hvd.size()
-
-    buffer_size = max_size
+    buffer_size = max_size * world_size
     if not hasattr(all_gather_py, '_buffer') or \
             all_gather_py._buffer.numel() < buffer_size:
         all_gather_py._buffer = torch.cuda.ByteTensor(buffer_size)
-
     buffer = all_gather_py._buffer
     buffer.zero_()
 
     enc = pickle.dumps(data)
     enc_size = len(enc)
-
     if enc_size + 2 > max_size:
         raise ValueError('encoded data exceeds max_size: {}'.format(enc_size + 2))
+    assert max_size < 255 * 256
 
-    buffer_rank = buffer
+    buffer_rank = buffer[rank * max_size: (rank + 1) * max_size]
     buffer_rank[0] = enc_size // 255  # this encoding works for max_size < 65k
     buffer_rank[1] = enc_size % 255
     buffer_rank[2:enc_size + 2] = torch.ByteTensor(list(enc))
 
-    buffer_gathered = hvd.allgather(buffer)
+    all_reduce(buffer, group=group)
 
-    result = []
-    for i in range(world_size):
-        out_buffer = buffer_gathered[i * max_size: (i + 1) * max_size]
-        size = (255 * item(out_buffer[0])) + item(out_buffer[1])
-        if size > 0:
-            result.append(
-                pickle.loads(bytes(out_buffer[2:size + 2].tolist()))
-            )
-    return result
-
-
-def all_reduce_py(data, max_size=65000, average=False):
-    """Apply allreduce to python objects"""
-    all_gathered_data = all_gather_py(data=data, max_size=max_size)
-
-    result = sum(all_gathered_data)
-
-    if not average:
+    try:
+        result = []
+        for i in range(world_size):
+            out_buffer = buffer[i * max_size: (i + 1) * max_size]
+            size = (255 * item(out_buffer[0])) + item(out_buffer[1])
+            if size > 0:
+                result.append(
+                    pickle.loads(bytes(out_buffer[2:size + 2].tolist()))
+                )
         return result
-    else:
-        return result / all(all_gathered_data)
+    except pickle.UnpicklingError:
+        raise Exception(
+            'Unable to unpickle data from other workers. all_gather_list requires all '
+            'workers to enter the function together, so this error usually indicates '
+            'that the workers have fallen out of sync somehow. Workers can fall out of '
+            'sync if one of them runs out of memory, or if there are other conditions '
+            'in your training script that can cause one worker to finish an epoch '
+            'while other workers are still iterating over their portions of the data.'
+        )
 
 
-def broadcast_py(data, root_rank, max_size=65000):
+def broadcast_py(data, root_rank=0, max_size=65000):
     """Apply broadcast to python objects"""
 
     # 1. allocate buffer
@@ -138,7 +163,7 @@ def broadcast_py(data, root_rank, max_size=65000):
     buffer_broadcasted[1] = enc_size % 255
     buffer_broadcasted[2:enc_size + 2] = torch.ByteTensor(list(enc))
 
-    hvd.broadcast(buffer_broadcasted, root_rank=root_rank)
+    broadcast(buffer_broadcasted, root_rank=root_rank)
 
     size = (255 * buffer_broadcasted[0]) + item(buffer_broadcasted[1])
     obj = pickle.loads(bytes(buffer_broadcasted[2:size + 2].tolist()))
@@ -146,19 +171,33 @@ def broadcast_py(data, root_rank, max_size=65000):
     return obj
 
 
-# In order to transfer relatively large python objects between nodes,
-# we utilize a shared file system between nodes.
+def broadcast_parameters(params):
+    if isinstance(params, dict):
+        params = list(params.items())
+    elif isinstance(params, list):
+        # support both named_parameters() and regular parameters()
+        params = [p if isinstance(p, tuple) else (None, p) for p in params]
+    else:
+        raise ValueError('invalid params of type: %s' % type(params))
+
+    _dist_broadcast_coalesced([p for name, p in params])
+
 
 def gen_random_name():
     """Return a random name for temp file"""
     return uuid.UUID(bytes=os.urandom(16), version=4).hex
 
 
-def synchronize_all_processes():
-    """Synchronize all processes by reducing a null tensor"""
-    null_tensor = torch.zeros(1)
+def get_local_rank():
+    return int(os.environ['LOCAL_RANK'])
 
-    _ = hvd.allreduce(null_tensor)
+
+def get_rank():
+    return dist.get_rank()
+
+
+def get_world_size():
+    return dist.get_world_size()
 
 
 class _SharedFSTransferProtocol(object):
@@ -222,16 +261,16 @@ class _SharedFSTransferProtocol(object):
         return protoc
 
 
-def all_gather_py_with_shared_fs(data):
-    tmp_protoc = _SharedFSTransferProtocol.write(data, shared_fs_root=_DEFAULT_SHARED_DIR)
+def all_gather_py_with_shared_fs(data, root_rank=0):
+    tmp_protoc = _SharedFSTransferProtocol.write(data, shared_fs_root=DEFAULT_SHARED_DIR)
 
     gathered_tmp_protoc = all_gather_py(tmp_protoc)
 
     gathered_data = [protoc.read() for protoc in gathered_tmp_protoc]
 
-    synchronize_all_processes()
+    barrier()
 
-    if hvd.rank() == 0:
+    if get_rank() == root_rank:
         for protoc in gathered_tmp_protoc:
             protoc.close()
 

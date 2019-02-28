@@ -16,12 +16,6 @@ from torch.nn.utils.clip_grad import clip_grad_norm_
 from .adafactor import Adafactor
 from .adamw import AdamW
 
-try:
-    from src.distributed import DistributedOptimizer
-    import horovod.torch as hvd
-except ImportError:
-    DistributedOptimizer = None
-
 
 def _rescale_grad(parameters, denom):
     parameters = list(filter(lambda p: p.grad is not None, parameters))
@@ -56,7 +50,6 @@ class Optimizer(object):
                  weight_decay=0,
                  grad_clip=None,
                  optim_args=None,
-                 distributed=False,
                  **kwargs):
         """
         :param decay_method: Method of learning rate decay.
@@ -68,7 +61,6 @@ class Optimizer(object):
         self.init_lr = lr
         self.weight_decay = weight_decay
         self.gclip = grad_clip
-        self.distributed = distributed
 
         self._count = 0
 
@@ -110,22 +102,11 @@ class Optimizer(object):
         self.optim = self.methods[self.name](self.param_groups,
                                              **self.optim_args)
 
-        if distributed:
-            if DistributedOptimizer is None:
-                error_info = "Cannot import horovod, distributed training is not supported!"
-                raise ImportError(error_info)
-            self.optim = DistributedOptimizer(optimizer=self.optim,
-                                              named_parameters=self.model.named_parameters())
-
     def zero_grad(self):
         self.optim.zero_grad()
 
     def step(self, denom=1.0, closure=None):
         """Gradient clipping aware step()."""
-
-        # 1. allreduce gradients
-        if self.distributed:
-            self.optim.synchronize()
 
         # 2. rescale gradients
         _rescale_grad(self.params, denom=denom)

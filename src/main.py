@@ -9,6 +9,7 @@ import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+import src.distributed as dist
 from src.data.data_iterator import DataIterator
 from src.data.dataset import TextLineDataset, ZipDataset
 from src.data.vocabulary import Vocabulary
@@ -23,12 +24,12 @@ from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
 from src.utils.moving_average import MovingAverage
 
-try:
-    import horovod.torch as hvd
-    import src.distributed as dist
-except:
-    hvd = None
-    dist = None
+# try:
+#     import horovod.torch as hvd
+#     import src.distributed as dist
+# except:
+#     hvd = None
+#     dist = None
 
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
@@ -54,35 +55,6 @@ def load_model_parameters(path, map_location="cpu"):
     if "model" in state_dict:
         return state_dict["model"]
     return state_dict
-
-
-def split_shard(*inputs, split_size=1):
-    if split_size <= 1:
-        yield inputs
-    else:
-
-        lengths = [len(s) for s in inputs[-1]]  #
-        sorted_indices = np.argsort(lengths)
-
-        # sorting inputs
-
-        inputs = [
-            [inp[ii] for ii in sorted_indices]
-            for inp in inputs
-        ]
-
-        # split shards
-        total_batch = sorted_indices.shape[0]  # total number of batches
-
-        if split_size >= total_batch:
-            yield inputs
-        else:
-            shard_size = total_batch // split_size
-
-            _indices = list(range(total_batch))[::shard_size] + [total_batch]
-
-            for beg, end in zip(_indices[:-1], _indices[1:]):
-                yield (inp[beg:end] for inp in inputs)
 
 
 def combine_from_all_shards(all_gathered_output):
@@ -479,14 +451,11 @@ def train(flags):
     GlobalNames.USE_GPU = flags.use_gpu
 
     if flags.multi_gpu:
-
-        if hvd is None or dist is None:
-            ERROR("Distributed training is disable. Please check the installation of Horovod.")
-
-        dist.init(flags.shared_dir)
-        world_size = hvd.size()
-        rank = hvd.rank()
-        local_rank = hvd.local_rank()
+        dist.distributed_init(flags.shared_dir)
+        world_size = dist.get_world_size()
+        rank = dist.get_rank()
+        local_rank = dist.get_local_rank()
+        torch.cuda.set_device(local_rank)
     else:
         world_size = 1
         rank = 0
@@ -625,14 +594,22 @@ def train(flags):
     # 4. Build optimizer
     INFO('Building Optimizer...')
 
-    optim = Optimizer(name=optimizer_configs['optimizer'],
-                      model=nmt_model,
-                      lr=lrate,
-                      grad_clip=optimizer_configs['grad_clip'],
-                      optim_args=optimizer_configs['optimizer_params'],
-                      distributed=True if world_size > 1 else False,
-                      update_cycle=training_configs['update_cycle']
-                      )
+    if not flags.multi_gpu:
+        optim = Optimizer(name=optimizer_configs['optimizer'],
+                          model=nmt_model,
+                          lr=lrate,
+                          grad_clip=optimizer_configs['grad_clip'],
+                          optim_args=optimizer_configs['optimizer_params'],
+                          update_cycle=training_configs['update_cycle']
+                          )
+    else:
+        optim = dist.DistributedOptimizer(name=optimizer_configs['optimizer'],
+                                          model=nmt_model,
+                                          lr=lrate,
+                                          grad_clip=optimizer_configs['grad_clip'],
+                                          optim_args=optimizer_configs['optimizer_params'],
+                                          device_id=local_rank
+                                          )
 
     # 5. Build scheduler for optimizer if needed
     if optimizer_configs['schedule_method'] is not None:
@@ -673,9 +650,9 @@ def train(flags):
     # broadcast parameters and optimizer states
     if world_size > 1:
         INFO("Broadcasting model parameters...")
-        hvd.broadcast_parameters(params=nmt_model.state_dict(), root_rank=0)
+        dist.broadcast_parameters(params=nmt_model.state_dict())
         INFO("Broadcasting optimizer states...")
-        hvd.broadcast_optimizer_state(optimizer=optim.optim, root_rank=0)
+        dist.broadcast_optimizer_state(optimizer=optim.optim)
         INFO('Done.')
 
     # ================================================================================== #
@@ -935,19 +912,15 @@ def translate(flags):
     GlobalNames.USE_GPU = flags.use_gpu
 
     if flags.multi_gpu:
-
-        if hvd is None or dist is None:
-            ERROR("Distributed training is disable. Please check the installation of Horovod.")
-
-        dist.init(flags.shared_dir)
-        world_size = hvd.size()
-        rank = hvd.rank()
-
-        if GlobalNames.USE_GPU:
-            torch.cuda.set_device(hvd.local_rank())
+        dist.distributed_init(flags.shared_dir)
+        world_size = dist.get_world_size()
+        rank = dist.get_rank()
+        local_rank = dist.get_local_rank()
+        torch.cuda.set_device(local_rank)
     else:
         world_size = 1
         rank = 0
+        local_rank = 0
 
     if rank != 0:
         close_logging()
@@ -1041,19 +1014,15 @@ def ensemble_translate(flags):
     GlobalNames.USE_GPU = flags.use_gpu
 
     if flags.multi_gpu:
-
-        if hvd is None or dist is None:
-            ERROR("Distributed training is disable. Please check the installation of Horovod.")
-
-        dist.init(flags.shared_dir)
-        world_size = hvd.size()
-        rank = hvd.rank()
-
-        if GlobalNames.USE_GPU:
-            torch.cuda.set_device(hvd.local_rank())
+        dist.distributed_init(flags.shared_dir)
+        world_size = dist.get_world_size()
+        rank = dist.get_rank()
+        local_rank = dist.get_local_rank()
+        torch.cuda.set_device(local_rank)
     else:
         world_size = 1
         rank = 0
+        local_rank = 0
 
     if rank != 0:
         close_logging()
