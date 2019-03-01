@@ -6,20 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Build Status](https://travis-ci.com/whr94621/NJUNMT-pytorch.svg?branch=dev-travis-ci)](https://travis-ci.com/whr94621/NJUNMT-pytorch)
 
-NJUNMT-pytorch is an open-source toolkit for neural machine translation.
-This toolkit is highly research-oriented, which contains some common baseline
-model:
-
-- [DL4MT-tutorial](https://github.com/nyu-dl/dl4mt-tutorial): A rnn-base nmt model widely used as baseline. To our knowledge, this is the
-only pytorch implementation which is exactly the same as original model.([nmtpytorch](https://github.com/lium-lst/nmtpytorch) is another pytorch implementation but with minor structure difference.)
-
-- [Attention is all you need](https://arxiv.org/abs/1706.03762): A strong nmt model introduced by Google, which only relies on attenion
-mechanism.
-
 ## Table of Contents
-
-<!-- toc -->
-
 - [NJUNMT-pytorch](#njunmt-pytorch)
   - [English, 中文](#english-%E4%B8%AD%E6%96%87)
   - [Table of Contents](#table-of-contents)
@@ -34,12 +21,20 @@ mechanism.
   - [Benchmark](#benchmark)
   - [Contact](#contact)
 
-<!-- tocstop -->
+NJUNMT-pytorch is an open-source toolkit for neural machine translation.
+This toolkit is highly research-oriented, which contains some common baseline
+model:
+
+- [DL4MT-tutorial](https://github.com/nyu-dl/dl4mt-tutorial): A rnn-base nmt model widely used as baseline. To our knowledge, this is the
+only pytorch implementation which is exactly the same as original model.([nmtpytorch](https://github.com/lium-lst/nmtpytorch) is another pytorch implementation but with minor structure difference.)
+
+- [Attention is all you need](https://arxiv.org/abs/1706.03762): A strong nmt model introduced by Google, which only relies on attenion
+mechanism.
 
 ## Requirements
 
 - python 3.5+
-- pytorch 0.4.0+
+- pytorch 1.0
 - tqdm
 - tensorboardX
 - sacrebleu

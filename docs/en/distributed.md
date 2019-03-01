@@ -2,15 +2,17 @@
 
 **Note:** We do not test our codes on the multi-node multi-GPU training.
 
-<!-- toc -->
-
 - [Distributed Training](#distributed-training)
+  - [Prerequisite](#prerequisite)
   - [Usage](#usage)
+  - [Performance](#performance)
   - [Q&A](#qa)
     - [Why we don't use `DistributedDataParallel`](#why-we-dont-use-distributeddataparallel)
     - [Why we don't use `Horovod`](#why-we-dont-use-horovod)
 
-<!-- tocstop -->
+## Prerequisite
+
+Need to install NCCL. You can download and install it from the [official website of NVIDIA](https://developer.nvidia.com/nccl).
 
 ## Usage
 
@@ -38,6 +40,18 @@ python -m src.distributed.launch \
     3. Read and merge these files and store the shared data.
 
 We can lauch distributed decoding in the same way as training.
+
+## Performance
+
+Here we show comparison on IWSLT15 English-Vietnamese dataset. We set the true batch size as 4096. On TITAN-X, we compare the speed and loss on validation data between training on single card and two cards. The configuration of single card training is `batch_size=1024,update_cycle=4`, while of two cards training it is `batch_size=1024, update_cycle=2`. We show the speed and loss curve Tensorboard below (the blue one is single card and the red is two-cards-training):
+
+Speed
+
+<img src="../distributed-speed-comp.png" width="300" height="200">
+
+Loss
+
+<img src="../distributed-loss-comp.png" width="300" height="200">
 
 ## Q&A
 

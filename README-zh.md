@@ -6,12 +6,6 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Build Status](https://travis-ci.com/whr94621/NJUNMT-pytorch.svg?branch=dev-travis-ci)](https://travis-ci.com/whr94621/NJUNMT-pytorch)
 
-NJUNMT-pytorch是一个开源的神经机器翻译工具包。这个工具包主要是为了方便机器翻译的研究，其中包括了如下一些基线系统：
-
-- [DL4MT-tutorial](https://github.com/nyu-dl/dl4mt-tutorial): 一个被广泛用作基于RNN的神经机器翻译模型的基线系统实现。据我们所知，这是目前唯一的和广为使用的的DL4MT系统相一致的pytorch实现。
-
-- [Attention is all you need](https://arxiv.org/abs/1706.03762): 谷歌提出的一个强大的神经机器翻译模型。这个模型完全依赖于注意力机制构建。
-
 ## 目录
 - [NJUNMT-pytorch](#njunmt-pytorch)
   - [English, 中文](#english-%E4%B8%AD%E6%96%87)
@@ -27,10 +21,16 @@ NJUNMT-pytorch是一个开源的神经机器翻译工具包。这个工具包主
   - [Benchmark](#benchmark)
   - [和我们联系](#%E5%92%8C%E6%88%91%E4%BB%AC%E8%81%94%E7%B3%BB)
 
+NJUNMT-pytorch是一个开源的神经机器翻译工具包。这个工具包主要是为了方便机器翻译的研究，其中包括了如下一些基线系统：
+
+- [DL4MT-tutorial](https://github.com/nyu-dl/dl4mt-tutorial): 一个被广泛用作基于RNN的神经机器翻译模型的基线系统实现。据我们所指，这是目前唯一的和广为使用的的DL4MT系统相一致的pytorch实现。
+
+- [Attention is all you need](https://arxiv.org/abs/1706.03762): 谷歌提出的一个强大的神经机器翻译模型。这个模型完全依赖于注意力机制构建。
+
 ## 依赖的包
 
 - python 3.5+
-- pytorch 0.4.0+
+- pytorch 1.0
 - tqdm
 - tensorboardX
 - sacrebleu
