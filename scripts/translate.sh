@@ -8,6 +8,7 @@ export MODEL_NAME="transformer"
 python src.bin.translate \
     --model_name $MODEL_NAME \
     --source_path "/home/weihr/NMT_DATA_PY3/1.34M/unittest/MT0$1/src.txt" \
+    --reference_path "/home/user_data/weihr/NMT_DATA_PY3/NIST-ZH-EN/test/mt0$1.ref" \
     --model_path "./save/$MODEL_NAME.best.tpz" \
     --config_path "./configs.yaml" \
     --batch_size 20 \

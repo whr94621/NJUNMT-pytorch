@@ -31,12 +31,14 @@ def test_transformer_inference(test_dir, use_gpu=False):
     model_name = test_utils.get_model_name(config_path)
     model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
     source_path = "./unittests/data/dev/zh.0"
+    reference_path = "./unitests/data/dev/en"
     batch_size = 3
     beam_size = 3
     alpha = 0.6
 
     translate.run(model_name=model_name,
                   source_path=source_path,
+                  reference_path=reference_path,
                   batch_size=batch_size,
                   beam_size=beam_size,
                   model_path=model_path,

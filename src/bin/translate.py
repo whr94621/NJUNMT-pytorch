@@ -9,6 +9,12 @@ parser.add_argument("--model_name", type=str,
 parser.add_argument("--source_path", type=str,
                     help="""Path to source file.""")
 
+parser.add_argument("--reference_path", type=str,
+                    help="""Path to reference file.""")
+
+parser.add_argument("--num_refs", type=int, default=1,
+                    help="number of reference")
+
 parser.add_argument("--model_path", type=str,
                     help="""Path to model files.""")
 
