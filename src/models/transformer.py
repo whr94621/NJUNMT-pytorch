@@ -79,7 +79,18 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(self.activation(self.w_1(x))))
 
 
-class SubBlock(nn.Module):
+class Block(nn.Module):
+    """
+    The definition of block (sublayer) is formally introduced in Chen, Mia Xu et al.
+    “The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation.” ACL (2018).
+
+    A block is consist of a transform function (TF), a layer normalization (LN) and a residual connection with
+    dropout (Drop-Res). There are two kinds of block, differing in the position of layer normalization:
+        a): LN -> TF -> Drop-Res  (layer_norm_first is True)
+        b): TF -> Drop-Res -> LN
+
+    A block can return more than one output, but we only perform LN and Drop-Res on the first output.
+    """
 
     def __init__(self, size, dropout, layer_norm_first=True):
         super().__init__()
@@ -117,7 +128,7 @@ class SubBlock(nn.Module):
         return output
 
 
-class SelfAttentionSubBlock(SubBlock):
+class SelfAttentionBlock(Block):
 
     def __init__(self, model_dim, head_count, dim_per_head=None, dropout=0.1, attn_dropout=0.1, layer_norm_firs=True):
         super().__init__(model_dim, dropout=dropout, layer_norm_first=layer_norm_firs)
@@ -129,7 +140,7 @@ class SelfAttentionSubBlock(SubBlock):
         return self.transform_layer(x, x, x, mask=mask, self_attn_cache=self_attn_cache)
 
 
-class EncoderAttentionBlock(SubBlock):
+class EncoderAttentionBlock(Block):
 
     def __init__(self, model_dim, head_count, dim_per_head=None, dropout=0.1, attn_dropout=0.1, layer_norm_first=True):
         super().__init__(model_dim, dropout=dropout, layer_norm_first=layer_norm_first)
@@ -141,7 +152,7 @@ class EncoderAttentionBlock(SubBlock):
         return self.transform_layer(context, context, dec_hidden, mask=mask, enc_attn_cache=enc_attn_cache)
 
 
-class PositionwiseFeedForwardSubBlock(SubBlock):
+class PositionwiseFeedForwardBlock(Block):
 
     def __init__(self, size, hidden_size, dropout=0.1, layer_norm_first=True, activation="relu"):
         super().__init__(size=size, dropout=dropout, layer_norm_first=layer_norm_first)
@@ -153,17 +164,17 @@ class PositionwiseFeedForwardSubBlock(SubBlock):
         return self.transform_layer(x)
 
 
-class EncoderBlock(nn.Module):
+class EncoderLayer(nn.Module):
 
     def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True,
                  ffn_activation="relu"):
-        super(EncoderBlock, self).__init__()
+        super(EncoderLayer, self).__init__()
 
-        self.slf_attn = SelfAttentionSubBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
-                                              dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
+        self.slf_attn = SelfAttentionBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                           dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
 
-        self.pos_ffn = PositionwiseFeedForwardSubBlock(size=d_model, hidden_size=d_inner_hid, dropout=dropout,
-                                                       layer_norm_first=layer_norm_first, activation=ffn_activation)
+        self.pos_ffn = PositionwiseFeedForwardBlock(size=d_model, hidden_size=d_inner_hid, dropout=dropout,
+                                                    layer_norm_first=layer_norm_first, activation=ffn_activation)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -192,7 +203,7 @@ class Encoder(nn.Module):
                                      )
 
         self.block_stack = nn.ModuleList(
-            [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
+            [EncoderLayer(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
                           dim_per_head=dim_per_head, layer_norm_first=layer_norm_first, ffn_activation=ffn_activation)
              for _ in range(n_layers)])
 
@@ -228,13 +239,13 @@ class DecoderBlock(nn.Module):
                  ffn_activation="relu"):
         super(DecoderBlock, self).__init__()
 
-        self.slf_attn = SelfAttentionSubBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
-                                              dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
+        self.slf_attn = SelfAttentionBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
+                                           dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
         self.ctx_attn = EncoderAttentionBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
                                               dim_per_head=dim_per_head, layer_norm_first=layer_norm_first)
 
-        self.pos_ffn = PositionwiseFeedForwardSubBlock(size=d_model, hidden_size=d_inner_hid,
-                                                       layer_norm_first=layer_norm_first, activation=ffn_activation)
+        self.pos_ffn = PositionwiseFeedForwardBlock(size=d_model, hidden_size=d_inner_hid,
+                                                    layer_norm_first=layer_norm_first, activation=ffn_activation)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -276,7 +287,7 @@ class Decoder(nn.Module):
                                      padding_idx=padding_idx
                                      )
 
-        self.block_stack = nn.ModuleList([
+        self.layer_stack = nn.ModuleList([
             DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
                          dim_per_head=dim_per_head, layer_norm_first=layer_norm_first, ffn_activation=ffn_activation)
             for _ in range(n_layers)])

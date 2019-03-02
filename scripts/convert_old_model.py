@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-"""
+""" Convert parameter's names of previous version into new version
 Usage:
     python convert_old_model.py <old-checkpoint-path>
 """
@@ -54,6 +54,8 @@ def convert_transformer_names(name: str):
 
         if "encoder.block_stack" in name and not ("slf_attn" in name or "pos_ffn" in name):
             name = name.replace("layer_norm", "slf_attn.layer_norm")
+
+    name = name.replace("block_stack", "layer_stack")
 
     if old_name != name:
         print("Convert {0} to {1}".format(old_name, name))
