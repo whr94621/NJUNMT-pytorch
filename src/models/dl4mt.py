@@ -44,8 +44,7 @@ class Encoder(nn.Module):
         # Use PAD
         self.embeddings = Embeddings(num_embeddings=n_words,
                                      embedding_dim=input_size,
-                                     dropout=0.0,
-                                     add_position_embedding=False)
+                                     dropout=0.0)
 
         self.gru = RNN(type="gru", batch_first=True, input_size=input_size, hidden_size=hidden_size,
                        bidirectional=True)
@@ -83,8 +82,7 @@ class Decoder(nn.Module):
 
         self.embeddings = Embeddings(num_embeddings=n_words,
                                     embedding_dim=input_size,
-                                    dropout=0.0,
-                                    add_position_embedding=False)
+                                    dropout=0.0)
 
         self.cgru_cell = CGRUCell(input_size=input_size, hidden_size=hidden_size, context_size=context_size)
 

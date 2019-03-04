@@ -202,7 +202,7 @@ class Encoder(nn.Module):
                                      positional_embedding=positional_embedding
                                      )
 
-        self.block_stack = nn.ModuleList(
+        self.layer_stack = nn.ModuleList(
             [EncoderLayer(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
                           dim_per_head=dim_per_head, layer_norm_first=layer_norm_first, ffn_activation=ffn_activation)
              for _ in range(n_layers)])
@@ -224,7 +224,7 @@ class Encoder(nn.Module):
         out = emb
 
         for i in range(self.num_layers):
-            out = self.block_stack[i](out, enc_slf_attn_mask)
+            out = self.layer_stack[i](out, enc_slf_attn_mask)
 
         if self.layer_norm_first:
             out = self.layer_norm(out)
@@ -334,7 +334,7 @@ class Decoder(nn.Module):
         new_enc_attn_caches = []
         for i in range(self.num_layers):
             output, attn, self_attn_cache, enc_attn_cache \
-                = self.block_stack[i](output,
+                = self.layer_stack[i](output,
                                       enc_output,
                                       dec_slf_attn_mask,
                                       dec_enc_attn_mask,
