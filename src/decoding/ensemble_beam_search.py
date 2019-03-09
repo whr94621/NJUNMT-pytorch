@@ -114,10 +114,10 @@ def ensemble_beam_search(nmt_models: List[NMTModel], beam_size, max_steps, src_s
                                              beam_size=beam_size,
                                              gather_shape=[-1])
 
-        dec_states_group = [nmt_models[ii].reorder_dec_states(dec_states_group[ii], new_beam_indices=next_beam_ids,
+        dec_states_group = [nmt_models[ii].reorder_dec_states(dec_states_group[ii],
+                                                              new_beam_indices=next_beam_ids,
+                                                              batch_size=batch_size,
                                                               beam_size=beam_size) for ii in range(num_models)]
-
-        # dec_states = nmt_model.reorder_dec_states(dec_states, new_beam_indices=next_beam_ids, beam_size=beam_size)
 
         # If next_word_ids is EOS, beam_mask_ should be 0.0
         beam_mask_ = 1.0 - next_word_ids.eq(EOS).float()

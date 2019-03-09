@@ -34,7 +34,7 @@ parser.add_argument("--valid_path", type=str, default="./valid",
 parser.add_argument("--multi_gpu", action="store_true",
                     help="""Running on multiple GPUs (No need to manually add this option).""")
 
-parser.add_argument("--shared_dir", type=str, default=None,
+parser.add_argument("--shared_dir", type=str, default="/tmp",
                     help="""Shared directory across nodes. Default is '/tmp'""")
 
 def run(**kwargs):

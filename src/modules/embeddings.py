@@ -6,6 +6,27 @@ import torch.nn as nn
 from src.data.vocabulary import PAD
 
 
+def sinusoidal_positional_embedding(x, min_timescale=1.0, max_timescale=1.0e4):
+    batch, length, channels = list(x.size())
+    assert (channels % 2 == 0)
+    num_timescales = channels // 2
+    log_timescale_increment = (
+            math.log(float(max_timescale) / float(min_timescale)) /
+            (float(num_timescales) - 1.))
+
+    position = torch.arange(0, length).to(x)
+    inv_timescales = torch.arange(0, num_timescales).to(x)
+
+    inv_timescales.mul_(-log_timescale_increment).exp_().mul_(min_timescale)
+    scaled_time = position.unsqueeze(1).expand(
+        length, num_timescales) * inv_timescales.unsqueeze(0).expand(length, num_timescales)
+    # scaled time is now length x num_timescales
+    # length x channels
+    signal = torch.cat([scaled_time.sin(), scaled_time.cos()], 1)
+
+    return signal.unsqueeze(0).expand(batch, length, channels)
+
+
 class LearnedPositionalEmbedding(nn.Module):
 
     def __init__(self, embedding_dim, maximum_position=512):
@@ -47,24 +68,8 @@ class SinusoidalPositionalEmbedding(nn.Module):
         Returns:
 
         """
-        batch, length, channels = list(input.size())
-        assert (channels % 2 == 0)
-        num_timescales = channels // 2
-        log_timescale_increment = (
-                math.log(float(self.max_timescale) / float(self.min_timescale)) /
-                (float(num_timescales) - 1.))
 
-        position = torch.arange(0, length).to(input)
-        inv_timescales = torch.arange(0, num_timescales).to(input)
-
-        inv_timescales.mul_(-log_timescale_increment).exp_().mul_(self.min_timescale)
-        scaled_time = position.unsqueeze(1).expand(
-            length, num_timescales) * inv_timescales.unsqueeze(0).expand(length, num_timescales)
-        # scaled time is now length x num_timescales
-        # length x channels
-        signal = torch.cat([scaled_time.sin(), scaled_time.cos()], 1)
-
-        return signal.unsqueeze(0).expand(batch, length, channels)
+        return sinusoidal_positional_embedding(input, self.min_timescale, self.max_timescale)
 
 
 class Embeddings(nn.Module):

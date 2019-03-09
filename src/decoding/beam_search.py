@@ -105,7 +105,8 @@ def beam_search(nmt_model, beam_size, max_steps, src_seqs, alpha=-1.0):
                                              beam_size=beam_size,
                                              gather_shape=[-1])
 
-        dec_states = nmt_model.reorder_dec_states(dec_states, new_beam_indices=next_beam_ids, beam_size=beam_size)
+        dec_states = nmt_model.reorder_dec_states(dec_states, new_beam_indices=next_beam_ids, batch_size=batch_size,
+                                                  beam_size=beam_size)
 
         # If next_word_ids is EOS, beam_mask_ should be 0.0
         beam_mask_ = 1.0 - next_word_ids.eq(EOS).float()

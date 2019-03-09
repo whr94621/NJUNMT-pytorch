@@ -1,14 +1,11 @@
+import argparse
 import os
-import subprocess
-from subprocess import DEVNULL
+import sacrebleu
+from sacremoses import MosesDetokenizer, MosesDetruecaser
 
 __all__ = [
     'SacreBLEUScorer'
 ]
-
-DETRUECASE_PL = os.path.join(os.path.dirname(__file__), "scripts/recaser/detruecase.perl")
-DETOKENIZE_PL = os.path.join(os.path.dirname(__file__), "scripts/tokenizer/detokenizer.perl")
-ZH_TOKENIZER_PY = os.path.join(os.path.dirname(__file__), "scripts/tokenizer/tokenizeChinese.py")
 
 
 class SacreBLEUScorer(object):
@@ -40,61 +37,53 @@ class SacreBLEUScorer(object):
         self.reference_path = reference_path
         self.num_refs = num_refs
 
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-lc', action='store_true', default=False)
+        parser.add_argument('--tokenize', '-tok', choices=sacrebleu.TOKENIZERS.keys(), default='13a')
+
         if sacrebleu_args is None:
-            self.sacrebleu_args = []
-        else:
-            self.sacrebleu_args = sacrebleu_args.strip().split()
+            sacrebleu_args = ""
+
+        self.sacrebleu_args = parser.parse_args(sacrebleu_args.split())
+
+        references = []
 
         if num_refs == 1:
-            self.references = [self.reference_path,]
+            with open(self.reference_path) as f:
+                references.append(f.readlines())
         else:
-            self.references = ["{0}{1}".format(self.reference_path, ii) for ii in range(self.num_refs)]
+            for ii in range(self.num_refs):
+                with open("{0}{1}".format(self.reference_path, ii)) as f:
+                    references.append(f.readlines())
+
+        self.references = references
 
         self.src_lang, self.tgt_lang = self.lang_pair.split("-")
         self.postprocess = postprocess
-        self.test_set = test_set
-
-
-    def _postprocess_cmd(self, stdin):
-
-        cmd_detrucase = subprocess.Popen(["perl", DETRUECASE_PL], stdin=stdin, stdout=subprocess.PIPE, stderr=DEVNULL)
-        cmd_postprocess = subprocess.Popen(["perl", DETOKENIZE_PL, "-q", "-l", self.tgt_lang],
-                                           stdin=cmd_detrucase.stdout, stdout=subprocess.PIPE, stderr=DEVNULL)
-        return cmd_postprocess
-
-    def _compute_bleu(self, stdin):
-
-        sacrebleu_cmd = ["sacrebleu", "-l", self.lang_pair] + self.sacrebleu_args + ["--score-only", ]
-
-        if self.test_set is not None:
-            sacrebleu_cmd += ['--test-set', ] + [self.test_set]
-        else:
-            sacrebleu_cmd += self.references
-
-        cmd_bleu = subprocess.Popen(["sacrebleu", "-l", self.lang_pair] + self.sacrebleu_args + ["--score-only",] + self.references,
-                                    stdin=stdin,
-                                    stdout=subprocess.PIPE
-                                    )
-
-        bleu = cmd_bleu.communicate()[0].decode("utf-8").strip()
-
-        try:
-            bleu = float(bleu)
-        except:
-            print(type(bleu))
-            print(bleu)
-            exit(1)
-
-        return bleu
-
-    def corpus_bleu(self, hyp_in):
 
         if self.postprocess:
-            cmd_postprocess = self._postprocess_cmd(stdin=hyp_in)
-            inp = cmd_postprocess.stdout
-        else:
-            inp = hyp_in
+            self.detokenizer = MosesDetokenizer(lang=self.tgt_lang)
+            self.detrucaser = MosesDetruecaser()
 
-        bleu = self._compute_bleu(stdin=inp)
+        self.test_set = test_set
 
-        return bleu
+    def _postprocess(self, string: str):
+
+        string = self.detrucaser.detruecase(string, return_str=False)
+        string = self.detokenizer.detokenize(string, return_str=True)
+
+        return string
+
+    def corpus_bleu(self, hyp_in):
+        """
+        hyp_in should be a list/steam of strings where each line is a hypothesis.
+        """
+
+        if self.postprocess:
+            hyp_in = [self._postprocess(line.strip()) for line in hyp_in]
+
+        bleu = sacrebleu.corpus_bleu(sys_stream=hyp_in, ref_streams=self.references,
+                                     lowercase=self.sacrebleu_args.lc,
+                                     tokenize=self.sacrebleu_args.tokenize)
+
+        return bleu.score

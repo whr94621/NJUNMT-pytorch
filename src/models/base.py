@@ -69,7 +69,7 @@ class NMTModel(nn.Module):
 
         raise NotImplementedError
 
-    def reorder_dec_states(self, dec_states, new_beam_indices, beam_size):
+    def reorder_dec_states(self, dec_states, new_beam_indices, batch_size, beam_size):
         """
         Re-ordering decoding states according to newly selected beam indices
 

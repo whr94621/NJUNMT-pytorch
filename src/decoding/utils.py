@@ -25,26 +25,13 @@ import torch
 
 from src.data.vocabulary import EOS, PAD
 from src.utils.common_utils import GlobalNames
+from src.modules.tensor_utils import FLOAT32_INF
 
 __all__ = [
-    'tile_batch',
     'mask_scores',
     'tensor_gather_helper',
     'reranking_beams'
 ]
-
-_FLOAT32_INF = np.float32(np.finfo('float32').max / 10)
-
-
-def tile_batch(x, multiplier, batch_dim=0):
-    x_size = x.size()
-    out_size = x_size[:batch_dim] + (x_size[batch_dim] * multiplier,) + x_size[batch_dim + 1:]
-
-    x_tiled = torch.unsqueeze(x, dim=batch_dim + 1)
-    x_tiled = x_tiled.repeat(*[1 if d != batch_dim + 1 else multiplier for d in range(len(x_size) + 1)])
-    x_tiled = x_tiled.view(*out_size)
-
-    return x_tiled
 
 
 def mask_scores(scores, beam_mask):
@@ -61,7 +48,7 @@ def mask_scores(scores, beam_mask):
     """
     vocab_size = scores.size(-1)
 
-    finished_row = beam_mask.new(vocab_size, ).zero_() + float(_FLOAT32_INF)
+    finished_row = beam_mask.new(vocab_size, ).zero_() + float(FLOAT32_INF)
 
     # If beam finished, only PAD could be generated afterwards.
     finished_row[EOS] = 0.0

@@ -251,14 +251,14 @@ class Saver(object):
         with open(self.save_prefix, "w") as f:
             f.write("\n".join(self.save_list))
 
-    def load_latest(self, **kwargs):
+    def load_latest(self, device, **kwargs):
 
         if len(self.save_list) == 0:
             return
 
         latest_path = os.path.join(self.save_dir, self.save_list[-1])
 
-        state_dict = torch.load(latest_path)
+        state_dict = torch.load(latest_path, map_location=device)
 
         for name, obj in kwargs.items():
             if self.savable(obj):

@@ -24,13 +24,6 @@ from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
 from src.utils.moving_average import MovingAverage
 
-# try:
-#     import horovod.torch as hvd
-#     import src.distributed as dist
-# except:
-#     hvd = None
-#     dist = None
-
 BOS = Vocabulary.BOS
 EOS = Vocabulary.EOS
 PAD = Vocabulary.PAD
@@ -477,7 +470,6 @@ def train(flags):
         world_size = dist.get_world_size()
         rank = dist.get_rank()
         local_rank = dist.get_local_rank()
-        torch.cuda.set_device(local_rank)
     else:
         world_size = 1
         rank = 0
@@ -603,7 +595,6 @@ def train(flags):
     critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
 
     INFO(critic)
-    INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # 2. Move to GPU
     if GlobalNames.USE_GPU:
@@ -612,6 +603,8 @@ def train(flags):
 
     # 3. Load pretrained model if needed
     load_pretrained_model(nmt_model, flags.pretrain_path, exclude_prefix=None, device=CURRENT_DEVICE)
+
+    INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
     # 4. Build optimizer
     INFO('Building Optimizer...')
@@ -654,7 +647,7 @@ def train(flags):
                                      optim=optim,
                                      lr_scheduler=scheduler,
                                      collections=model_collections,
-                                     ma=ma)
+                                     ma=ma, device=CURRENT_DEVICE)
 
     # broadcast parameters and optimizer states
     if world_size > 1:

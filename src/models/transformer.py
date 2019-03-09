@@ -26,7 +26,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.data.vocabulary import PAD
-from src.decoding.utils import tile_batch, tensor_gather_helper
+from src.modules.tensor_utils import tile_batch
+from src.decoding.utils import tensor_gather_helper
 from src.models.base import NMTModel
 from src.modules.activation import GELU
 from src.modules.attention import MultiHeadedAttention
@@ -232,12 +233,12 @@ class Encoder(nn.Module):
         return out, enc_mask
 
 
-class DecoderBlock(nn.Module):
+class DecoderLayer(nn.Module):
     ''' Compose with three layers '''
 
     def __init__(self, d_model, d_inner_hid, n_head, dim_per_head, dropout=0.1, layer_norm_first=True,
                  ffn_activation="relu"):
-        super(DecoderBlock, self).__init__()
+        super(DecoderLayer, self).__init__()
 
         self.slf_attn = SelfAttentionBlock(head_count=n_head, model_dim=d_model, dropout=dropout,
                                            dim_per_head=dim_per_head, layer_norm_firs=layer_norm_first)
@@ -288,7 +289,7 @@ class Decoder(nn.Module):
                                      )
 
         self.layer_stack = nn.ModuleList([
-            DecoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
+            DecoderLayer(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout,
                          dim_per_head=dim_per_head, layer_norm_first=layer_norm_first, ffn_activation=ffn_activation)
             for _ in range(n_layers)])
 
@@ -487,11 +488,9 @@ class Transformer(NMTModel):
 
         return next_scores, dec_states
 
-    def reorder_dec_states(self, dec_states, new_beam_indices, beam_size):
+    def reorder_dec_states(self, dec_states, new_beam_indices, batch_size, beam_size):
 
         slf_attn_caches = dec_states['slf_attn_caches']
-
-        batch_size = slf_attn_caches[0][0].size(0) // beam_size
 
         n_head = self.decoder.n_head
         dim_per_head = self.decoder.dim_per_head

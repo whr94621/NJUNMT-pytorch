@@ -26,7 +26,8 @@ import torch.nn.functional as F
 
 import src.utils.init as my_init
 from src.data.vocabulary import PAD
-from src.decoding.utils import tile_batch, tensor_gather_helper
+from src.modules.tensor_utils import tile_batch
+from src.decoding.utils import tensor_gather_helper
 from src.modules.cgru import CGRUCell
 from src.modules.embeddings import Embeddings
 from src.modules.rnn import RNN
@@ -81,8 +82,8 @@ class Decoder(nn.Module):
         # self.context_size = hidden_size * 2
 
         self.embeddings = Embeddings(num_embeddings=n_words,
-                                    embedding_dim=input_size,
-                                    dropout=0.0)
+                                     embedding_dim=input_size,
+                                     dropout=0.0)
 
         self.cgru_cell = CGRUCell(input_size=input_size, hidden_size=hidden_size, context_size=context_size)
 
@@ -119,7 +120,7 @@ class Decoder(nn.Module):
 
             no_pad_mask = 1.0 - mask.float()
             ctx_mean = (context * no_pad_mask.unsqueeze(2)).sum(1) / no_pad_mask.unsqueeze(2).sum(1)
-            dec_init = F.tanh(self.linear_bridge(ctx_mean))
+            dec_init = torch.tanh(self.linear_bridge(ctx_mean))
 
         elif self.bridge_type == "zero":
             batch_size = context.size(0)
@@ -152,7 +153,7 @@ class Decoder(nn.Module):
 
         logits = self.linear_input(emb) + self.linear_hidden(out) + self.linear_ctx(attn)
 
-        logits = F.tanh(logits)
+        logits = torch.tanh(logits)
 
         logits = self.dropout(logits)  # [batch_size, seq_len, dim]
 
@@ -193,7 +194,6 @@ class Generator(nn.Module):
             x_2d = x_2d + mask
 
             return x_2d.view(x_size)
-
 
     def forward(self, input, log_probs=True):
         """
@@ -291,11 +291,9 @@ class DL4MT(NMTModel):
 
         return scores, dec_states
 
-    def reorder_dec_states(self, dec_states, new_beam_indices, beam_size):
+    def reorder_dec_states(self, dec_states, new_beam_indices, batch_size, beam_size):
 
         dec_hiddens = dec_states["dec_hiddens"]
-
-        batch_size = dec_hiddens.size(0) // beam_size
 
         dec_hiddens = tensor_gather_helper(gather_indices=new_beam_indices,
                                            gather_from=dec_hiddens,
