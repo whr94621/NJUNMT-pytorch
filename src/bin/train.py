@@ -26,7 +26,7 @@ parser.add_argument('--debug', action="store_true",
 parser.add_argument('--use_gpu', action="store_true",
                     help="Whether to use GPU.")
 
-parser.add_argument('--pretrain_path', type=str, default="", help="The path for pretrained model.")
+parser.add_argument('--pretrain_path', type=str, default=None, help="The path for pretrained model.")
 
 parser.add_argument("--valid_path", type=str, default="./valid",
                     help="""Path to save translation for bleu evaulation. Default is ./valid.""")
@@ -36,6 +36,10 @@ parser.add_argument("--multi_gpu", action="store_true",
 
 parser.add_argument("--shared_dir", type=str, default="/tmp",
                     help="""Shared directory across nodes. Default is '/tmp'""")
+
+parser.add_argument("--predefined_config", type=str, default=None,
+                    help="""Use predefined configuration.""")
+
 
 def run(**kwargs):
     args = parser.parse_args()

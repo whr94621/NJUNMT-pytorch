@@ -35,6 +35,13 @@ from src.modules.basic import BottleLinear as Linear
 from src.modules.embeddings import Embeddings
 from src.utils import nest
 
+__all__ = [
+    'Transformer',
+    'transformer_base_v1',
+    'transformer_base_v2',
+    'transformer_low_resource'
+]
+
 
 def get_attn_causal_mask(seq):
     ''' Get an attention mask to avoid using the subsequent info.
@@ -506,3 +513,79 @@ class Transformer(NMTModel):
         dec_states['slf_attn_caches'] = slf_attn_caches
 
         return dec_states
+
+
+def transformer_base_v1(configs):
+    """ Configuration of transformer_base_v1
+
+    This is equivalent to `transformer_base_v1` in tensor2tensor
+    """
+    # model configurations
+    model_configs = configs.setdefault("model_configs", {})
+    model_configs['model'] = "Transformer"
+    model_configs['n_layers'] = 6
+    model_configs['n_head'] = 8
+    model_configs['d_model'] = 512
+    model_configs['d_word_vec'] = 512
+    model_configs['d_inner_hid'] = 2048
+    model_configs['dropout'] = 0.1
+    model_configs['label_smoothing'] = 0.1
+    model_configs["layer_norm_first"] = False
+    model_configs['tie_input_output_embedding'] = True
+
+    # optimizer_configs
+    optimizer_configs = configs.setdefault("optimizer_configs", {})
+    optimizer_configs['optimizer'] = "adam"
+    optimizer_configs['learning_rate'] = 0.1
+    optimizer_configs['grad_clip'] = - 1.0
+    optimizer_configs['optimizer_params'] = {"betas": [0.9, 0.98], "eps": 1e-9}
+    optimizer_configs['schedule_method'] = "noam"
+    optimizer_configs['scheduler_configs'] = {"d_model": 512, "warmup_steps": 4000}
+
+    return configs
+
+
+def transformer_base_v2(configs):
+    """ Configuration of transformer_base_v2
+
+    This is equivalent to `transformer_base_v2` in tensor2tensor
+    """
+    configs = transformer_base_v1(configs)
+
+    # model configurations
+    model_configs = configs['model_configs']
+    model_configs['layer_norm_first'] = True
+
+    # optimizer_configs
+    optimizer_configs = configs['optimizer_configs']
+    optimizer_configs['learning_rate'] = 0.2
+    optimizer_configs['scheduler_configs'] = {"d_model": 512, "warmup_steps": 8000}
+
+    return configs
+
+
+def transformer_low_resource(configs):
+    """ Configuration for training transformer on low-resource datasets.
+
+    This is equivalent to configuration of IWSLT'14 De2en in fairseq.
+    """
+
+    configs = transformer_base_v2(configs)
+
+    # model configurations
+    model_configs = configs['model_configs']
+    model_configs['dropout'] = 0.3
+
+    # optimizer_configs
+    optimizer_configs = configs['optimizer_configs']
+    optimizer_configs['optimizer'] = "adamw"
+    optimizer_configs['learning_rate'] = 0.0005
+    optimizer_configs['optimizer_params'] = {"betas": [0.9, 0.98], "eps": 1e-9, "weight_decay": 0.0001}
+    optimizer_configs['schedule_method'] = "isqrt"
+    optimizer_configs['scheduler_configs'] = {
+        "min_lr": 1e-9,
+        "warmup_steps": 4000,
+        "decay_steps": 4000,
+    }
+
+    return configs

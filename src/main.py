@@ -15,10 +15,10 @@ from src.data.dataset import TextLineDataset, ZipDataset
 from src.data.vocabulary import Vocabulary
 from src.decoding import beam_search, ensemble_beam_search
 from src.metric.bleu_scorer import SacreBLEUScorer
-from src.models import build_model
+from src.models import build_model, load_predefined_configs
 from src.modules.criterions import NMTCriterion
 from src.optim import Optimizer
-from src.optim.lr_scheduler import *
+from src.optim.lr_scheduler import build_scheduler
 from src.utils.common_utils import *
 from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
@@ -40,20 +40,6 @@ def set_seed(seed):
     np.random.seed(seed)
 
     torch.backends.cudnn.deterministic = True
-
-
-def build_scheduler(schedule_method: str, optimizer: Optimizer, scheduler_configs: dict):
-    if schedule_method is None:
-        return None
-    elif schedule_method == "loss":
-        return ReduceOnPlateauScheduler(optimizer=optimizer, **scheduler_configs)
-    elif schedule_method == "noam":
-        return NoamScheduler(optimizer=optimizer, **scheduler_configs)
-    elif schedule_method == "isqrt":
-        return InverseSqrtWithWarmupScheduler(optimizer=optimizer, **scheduler_configs)
-    else:
-        WARN("Unknown scheduler name {0}. Do not use lr_scheduling.".format(schedule_method))
-        return None
 
 
 def load_model_parameters(path, map_location="cpu"):
@@ -420,7 +406,7 @@ def load_pretrained_model(nmt_model, pretrain_path, device, exclude_prefix=None)
     """
     if exclude_prefix is None:
         exclude_prefix = []
-    if pretrain_path != "":
+    if pretrain_path is not None:
         INFO("Loading pretrained model from {}".format(pretrain_path))
 
         all_parameter_names = set([name for name in nmt_model.state_dict().keys()])
@@ -496,14 +482,19 @@ def train(flags):
     with open(config_path.strip()) as f:
         configs = yaml.load(f)
 
-    INFO(pretty_configs(configs))
-
     # Add default configs
     configs = default_configs(configs)
+
+    # Use predefined configuration
+    if flags.predefined_config is not None:
+        configs = load_predefined_configs(configs=configs, name=flags.predefined_config)
+
     data_configs = configs['data_configs']
     model_configs = configs['model_configs']
     optimizer_configs = configs['optimizer_configs']
     training_configs = configs['training_configs']
+
+    INFO(pretty_configs(configs))
 
     GlobalNames.SEED = training_configs['seed']
 
@@ -563,9 +554,6 @@ def train(flags):
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
-    lrate = optimizer_configs['learning_rate']
-    is_early_stop = False
-
     # ================================ Begin ======================================== #
     # Build Model & Optimizer
     # We would do steps below on after another
@@ -577,6 +565,8 @@ def train(flags):
     #     6. load checkpoints if needed
 
     # 0. Initial
+
+    lrate = optimizer_configs['learning_rate']
     model_collections = Collections()
 
     checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(flags.saveto, flags.model_name)),
@@ -664,6 +654,7 @@ def train(flags):
     uidx = model_collections.get_collection("uidx", [1])[-1]
     bad_count = model_collections.get_collection("bad_count", [0])[-1]
     oom_count = model_collections.get_collection("oom_count", [0])[-1]
+    is_early_stop = model_collections.get_collection("is_early_stop", [False, ])[-1]
 
     train_loss_meter = AverageMeter()
     sent_per_sec_meter = TimeMeter()

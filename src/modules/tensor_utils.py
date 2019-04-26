@@ -23,7 +23,7 @@
 import torch
 import numpy as np
 
-FLOAT32_INF = np.float32(np.finfo('float32').max / 10)
+FLOAT32_INF = float(np.finfo('float32').max / 10)
 
 
 def tile_batch(x, multiplier, batch_dim=0):

@@ -353,3 +353,34 @@ class TimeMeter(Meter):
 
         self.denom += elapsed_time
         self.timer.tic()
+
+
+def register(name: str, registry: dict):
+    """
+    Register a class or a function with name in registry.
+
+    For example:
+
+        CLS = {}
+
+        @register("a", CLS)
+        class A(object):
+            def __init__(self, a=1):
+                self.a = a
+
+        cls_a = CLS['a'](1)
+
+    In this way you can build class A given string 'a'.
+
+    Args:
+        name (str): the registering name of this class.
+        registry (dict): a dict to register classess.
+    """
+    def register_cls(cls):
+        if name in registry:
+            raise KeyError("{0} has already been registered!")
+        else:
+            registry[name] = cls
+            return cls
+
+    return register_cls

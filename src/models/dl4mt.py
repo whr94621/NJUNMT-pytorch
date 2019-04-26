@@ -33,6 +33,10 @@ from src.modules.embeddings import Embeddings
 from src.modules.rnn import RNN
 from .base import NMTModel
 
+__all__ = [
+    'DL4MT',
+    'dl4mt_base'
+]
 
 class Encoder(nn.Module):
     def __init__(self,
@@ -304,3 +308,31 @@ class DL4MT(NMTModel):
         dec_states['dec_hiddens'] = dec_hiddens
 
         return dec_states
+
+
+def dl4mt_base(configs):
+    """ Configuration of DL4MT
+
+    This is a common configuration of dl4mt-tutorial session 2.
+    """
+    # model configurations
+    model_configs = configs.setdefault("model_configs", {})
+    model_configs['model'] = "DL4MT"
+    model_configs['d_model'] = 512
+    model_configs['d_word_vec'] = 1024
+    model_configs['dropout'] = 0.5
+    model_configs['tie_input_output_embedding'] = True
+    model_configs['bridge_type'] = "mlp"
+
+    # optimizer_configs
+    optimizer_configs = configs.setdefault("optimizer_configs", {})
+    optimizer_configs['optimizer'] = "adam"
+    optimizer_configs['learning_rate'] = 0.0004
+    optimizer_configs['grad_clip'] = 1.0
+    optimizer_configs['schedule_method'] = "loss"
+    optimizer_configs['scheduler_configs'] = {
+        "min_lr": 0.00005,
+        "patience": 5
+    }
+
+    return configs

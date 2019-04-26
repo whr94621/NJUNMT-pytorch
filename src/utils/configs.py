@@ -44,11 +44,11 @@ def default_base_configs():
 
         },
         "optimizer_configs": {
-            "grad_clip": -1.0,
+            "grad_clip": -1.0,  # Close gradient clipping given a non-positive value.
             "optimizer_params": None,
-            "schedule_method": None
-        }
-        ,
+            "schedule_method": None,
+            "scheduler_configs": None,
+        },
         "training_configs": {
             "seed": 1234,
             "max_epochs": 10000,
@@ -73,101 +73,21 @@ def default_base_configs():
 
             # About moving average
             "moving_average_method": None,  # sma | ema | None
-            "moving_average_alpha": 0.0,
-            "moving_average_start_epoch": 0
         }
     }
-
-
-def default_loss_schedule_configs():
-    return {
-        "schedule_configs": {
-            "patience": 20,
-            "min_lr": 0.00005,
-            "scale": 0.5
-        }
-    }
-
-
-def default_noam_schedule_configs(d_model):
-    return {
-        "schedule_configs": {
-            "d_model": d_model,
-            "warmup_steps": 8000
-        }
-    }
-
-
-def default_transformer_configs(default_configs):
-    default_configs['model_configs']['n_layers'] = 6
-    default_configs['model_configs']['n_head'] = 8
-    default_configs['model_configs']['d_word_vec'] = 512
-    default_configs['model_configs']['d_model'] = 512
-    default_configs['model_configs']['d_inner_hid'] = 2048
-    default_configs['model_configs']['dropout'] = 0.1
-    default_configs['model_configs']['label_smoothing'] = 0.1
-    default_configs['model_configs']['layer_norm_first'] = True
-    default_configs['model_configs']['positional_embedding'] = "sin"
-    default_configs['model_configs']['ffn_activation'] = "relu"
-
-    # Add compatible optimizer configs
-    default_configs['optimizer_configs']['optimizer'] = "adam"
-    default_configs['optimizer_configs']['learning_rate'] = 2.0
-    default_configs['optimizer_configs']['grad_clip'] = - 1.0
-    default_configs['optimizer_configs']['schedule_method'] = "noam"
-    add_default_configs(default_configs['optimizer_configs'], default_loss_schedule_configs())
-    default_configs['optimizer_configs']['schedule_configs']['d_model'] = 512
-
-    return default_configs
-
-
-def default_dl4mt_configs(default_configs):
-    default_configs['model_configs']['d_word_dev'] = 512
-    default_configs['model_configs']['d_model'] = 1024
-    default_configs['model_configs']['bridge_type'] = "mlp"
-    default_configs['model_configs']['dropout'] = 0.5
-
-    # Add compatible optimizer configs
-    default_configs['optimizer_configs']['optimizer'] = "adam"
-    default_configs['optimizer_configs']['learning_rate'] = 0.0005
-    default_configs['optimizer_configs']['grad_clip'] = 1.0
-    default_configs['optimizer_configs']['schedule_method'] = "loss"
-    add_default_configs(default_configs['optimizer_configs'], default_loss_schedule_configs())
-
-    return default_configs
 
 
 def default_configs(user_configs):
     # init default configs
     base_configs = default_base_configs()
 
-    # init default model configs according ot model type
-    if user_configs['model_configs']['model'] == "Transformer":
-        default_transformer_configs(base_configs)
-    elif user_configs['model_configs']['model'] == "DL4MT":
-        default_dl4mt_configs(base_configs)
-    else:
-        pass
-
     # add default values to user_configs
     add_default_configs(user_configs, base_configs)
-
-    # Add default lrate schedule configs to user_cofigs
-    if user_configs['optimizer_configs']['schedule_method'] == "loss":
-        add_default_configs(user_configs['optimizer_configs'], default_loss_schedule_configs())
-    elif user_configs['optimizer_configs']['schedule_method'] == "noam":
-        add_default_configs(user_configs['optimizer_configs'],
-                            default_noam_schedule_configs(d_model=user_configs['model_configs']['d_model']))
-    else:
-        pass
-
-    real_batch_size = user_configs['training_configs']['batch_size'] * user_configs['training_configs']['update_cycle']
-    user_configs['training_configs'].setdefault("buffer_size", real_batch_size * 6)
-
     return user_configs
 
 
 def pretty_configs(user_configs: dict, prefix=""):
+    """Format configurations"""
     output = []
 
     for key, value in user_configs.items():

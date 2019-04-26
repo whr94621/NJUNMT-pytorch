@@ -13,8 +13,20 @@ import torch.nn as nn
 import torch.optim
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
-from .adafactor import Adafactor
 from .adamw import AdamW
+from .adafactor import Adafactor
+
+OPTIMIZERS = {
+    'adadelta': torch.optim.Adadelta,
+    'adagrad': torch.optim.Adagrad,
+    'adam': torch.optim.Adam,
+    'sgd': torch.optim.SGD,
+    'asgd': torch.optim.ASGD,
+    'rprop': torch.optim.Rprop,
+    'rmsprop': torch.optim.RMSprop,
+    "adamw": AdamW,
+    "adafactor": Adafactor
+}
 
 
 def _rescale_grad(parameters, denom):
@@ -24,18 +36,6 @@ def _rescale_grad(parameters, denom):
 
 
 class Optimizer(object):
-    # Class dict to map lowercase identifiers to actual classes
-    methods = {
-        'adadelta': torch.optim.Adadelta,
-        'adagrad': torch.optim.Adagrad,
-        'adam': torch.optim.Adam,
-        'sgd': torch.optim.SGD,
-        'asgd': torch.optim.ASGD,
-        'rprop': torch.optim.Rprop,
-        'rmsprop': torch.optim.RMSprop,
-        "adamw": AdamW,
-        "adafactor": Adafactor
-    }
 
     @staticmethod
     def get_params(model):
@@ -99,8 +99,7 @@ class Optimizer(object):
         assert n_params == 0, "Not all params are passed to the optimizer."
 
         # Create the actual optimizer
-        self.optim = self.methods[self.name](self.param_groups,
-                                             **self.optim_args)
+        self.optim = OPTIMIZERS[self.name](self.param_groups, **self.optim_args)
 
     def zero_grad(self):
         self.optim.zero_grad()

@@ -12,16 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .dl4mt import DL4MT
-from .transformer import Transformer
+from .dl4mt import *
+from .transformer import *
 
 __all__ = [
     "build_model",
+    "load_predefined_configs"
 ]
 
 MODEL_CLS = {
     "Transformer": Transformer,
     "DL4MT": DL4MT,
+}
+
+DEFAULT_CONFIGS = {
+    "transformer_base": transformer_base_v2,
+    "transformer_base_v1": transformer_base_v1,
+    "transformer_base_v2": transformer_base_v2,
+    "transformer_low_resource": transformer_low_resource,
+    "dl4mt_base": dl4mt_base
 }
 
 
@@ -32,3 +41,11 @@ def build_model(model: str, **kwargs):
                 model, list(MODEL_CLS.keys())))
 
     return MODEL_CLS[model](**kwargs)
+
+
+def load_predefined_configs(configs: dict, name: str):
+    if name not in DEFAULT_CONFIGS:
+        return configs
+    else:
+        configs = DEFAULT_CONFIGS[name](configs)
+        return configs

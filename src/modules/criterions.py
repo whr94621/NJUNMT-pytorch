@@ -106,9 +106,7 @@ class NMTCriterion(Criterion):
 
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()  # mask of PAD
 
-            one_hot = self._smooth_label(num_tokens)  # Do label smoothing
-            if labels.is_cuda:
-                one_hot = one_hot.cuda()
+            one_hot = self._smooth_label(num_tokens).to(device=labels.device)  # Do label smoothing
             tmp_ = one_hot.repeat(gtruth.size(0), 1)  # [N, M]
             tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
 
