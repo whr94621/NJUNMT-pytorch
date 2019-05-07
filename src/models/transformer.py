@@ -25,7 +25,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.data.vocabulary import PAD
 from src.modules.tensor_utils import tile_batch
 from src.decoding.utils import tensor_gather_helper
 from src.models.base import NMTModel
@@ -197,17 +196,19 @@ class Encoder(nn.Module):
     def __init__(
             self, n_src_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dropout=0.1, dim_per_head=None,
-            padding_idx=PAD, positional_embedding="sin", layer_norm_first=True, ffn_activation="relu"):
+            padding_idx=0, positional_embedding="sin", layer_norm_first=True, ffn_activation="relu"):
         super().__init__()
 
         self.scale = d_word_vec ** 0.5
         self.num_layers = n_layers
         self.layer_norm_first = layer_norm_first
+        self.padding_idx = padding_idx
 
         self.embeddings = Embeddings(num_embeddings=n_src_vocab,
                                      embedding_dim=d_word_vec,
                                      dropout=dropout,
-                                     positional_embedding=positional_embedding
+                                     positional_embedding=positional_embedding,
+                                     padding_idx=padding_idx
                                      )
 
         self.layer_stack = nn.ModuleList(
@@ -223,7 +224,7 @@ class Encoder(nn.Module):
 
         emb = self.embeddings(src_seq)
 
-        enc_mask = src_seq.detach().eq(PAD)
+        enc_mask = src_seq.detach().eq(self.padding_idx)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
 
         if not self.layer_norm_first:
@@ -280,7 +281,7 @@ class Decoder(nn.Module):
     def __init__(
             self, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None, dropout=0.1,
-            positional_embedding="sin", layer_norm_first=True, padding_idx=PAD, ffn_activation="relu"):
+            positional_embedding="sin", layer_norm_first=True, padding_idx=0, ffn_activation="relu"):
 
         super(Decoder, self).__init__()
 
@@ -288,6 +289,7 @@ class Decoder(nn.Module):
         self.num_layers = n_layers
         self.d_model = d_model
         self.layer_norm_first = layer_norm_first
+        self.padding_idx = padding_idx
 
         self.embeddings = Embeddings(n_tgt_vocab, d_word_vec,
                                      dropout=dropout,
@@ -331,7 +333,7 @@ class Decoder(nn.Module):
             query_len = 1
 
         # Decode mask
-        dec_slf_attn_pad_mask = tgt_seq.detach().eq(PAD).unsqueeze(1).expand(batch_size, query_len, key_len)
+        dec_slf_attn_pad_mask = tgt_seq.eq(self.padding_idx).unsqueeze(1).expand(batch_size, query_len, key_len)
         dec_slf_attn_sub_mask = get_attn_causal_mask(emb)
 
         dec_slf_attn_mask = torch.gt(dec_slf_attn_pad_mask + dec_slf_attn_sub_mask, 0)
@@ -407,10 +409,12 @@ class Transformer(NMTModel):
     def __init__(
             self, n_src_vocab, n_tgt_vocab, n_layers=6, n_head=8,
             d_word_vec=512, d_model=512, d_inner_hid=1024, dim_per_head=None,
-            dropout=0.1, tie_input_output_embedding=True, tie_source_target_embedding=False, padding_idx=PAD,
+            dropout=0.1, tie_input_output_embedding=True, tie_source_target_embedding=False, padding_idx=-1,
             layer_norm_first=True, positional_embedding="sin", generator_bias=False, ffn_activation="relu", **kwargs):
 
         super(Transformer, self).__init__()
+
+        self.padding_idx = padding_idx
 
         self.encoder = Encoder(
             n_src_vocab, n_layers=n_layers, n_head=n_head,
@@ -426,8 +430,6 @@ class Transformer(NMTModel):
             padding_idx=padding_idx, layer_norm_first=layer_norm_first, positional_embedding=positional_embedding,
             ffn_activation=ffn_activation)
 
-        self.dropout = nn.Dropout(dropout)
-
         assert d_model == d_word_vec, \
             'To facilitate the residual connections, \
              the dimensions of all module output shall be the same.'
@@ -441,10 +443,10 @@ class Transformer(NMTModel):
             self.generator = Generator(n_words=n_tgt_vocab,
                                        hidden_size=d_word_vec,
                                        shared_weight=self.decoder.embeddings.embeddings.weight,
-                                       padding_idx=PAD, add_bias=generator_bias)
+                                       padding_idx=self.padding_idx, add_bias=generator_bias)
 
         else:
-            self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
+            self.generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=self.padding_idx,
                                        add_bias=generator_bias)
 
     def forward(self, src_seq, tgt_seq, log_probs=True):

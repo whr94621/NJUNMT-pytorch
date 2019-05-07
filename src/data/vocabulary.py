@@ -1,61 +1,76 @@
+import os
+import re
+from typing import List
+from .bpe import Bpe
 import json
 
-from .tokenizer import Tokenizer, _Tokenizer
+RESERVED_TOKENS_DICT = {
+    "<PAD>": (0, 0),
+    "<EOS>": (1, 0),
+    "<BOS>": (2, 0),
+    "<UNK>": (3, 0)
+}
 
 
 class Vocabulary(object):
-    PAD = 0
-    EOS = 1
-    BOS = 2
-    UNK = 3
 
-    def __init__(self, type, dict_path, max_n_words=-1, **kwargs):
+    def __init__(self, dictionary: dict, max_n_words=-1):
+        super().__init__()
 
-        self.dict_path = dict_path
-        self._max_n_words = max_n_words
-        self.tokenizer = Tokenizer(type=type, **kwargs)  # type: _Tokenizer
+        self._token2id_feq = RESERVED_TOKENS_DICT.copy()
 
-        self._load_vocab(self.dict_path)
+        n_reserved_tokens = len(self._token2id_feq)
+
+        for item in dictionary.items():
+            self._token2id_feq[item[0]] = (item[1][0] + n_reserved_tokens, item[1][1])
+
         self._id2token = dict([(ii[0], ww) for ww, ii in self._token2id_feq.items()])
+        self.max_n_words = len(self._token2id_feq) if max_n_words == -1 else max_n_words
 
-        self.max_n_words = len(self._token2id_feq) if self._max_n_words == -1 else self._max_n_words
+    @staticmethod
+    def build_from_file(type: str, dict_path: str, max_n_words: int, **kwargs) -> 'Vocabulary':
 
-    def _init_dict(self):
-
-        return {
-            "<PAD>": (self.PAD, 0),
-            "<UNK>": (self.UNK, 0),
-            "<EOS>": (self.EOS, 0),
-            "<BOS>": (self.BOS, 0)
-        }
-
-    def _load_vocab(self, path):
-        """
-        Load vocabulary from file
-
-        If file is formatted as json, for each item the key is the token, while the value is a tuple such as
-        (word_id, word_feq), or a integer which is the index of the token. The index should start from 0.
-
-        If file is formatted as a text file, each line is a token
-        """
-        self._token2id_feq = self._init_dict()
-        N = len(self._token2id_feq)
-
-        if path.endswith(".json"):
-
-            with open(path) as f:
-                _dict = json.load(f)
-                # Word to word index and word frequence.
-                for ww, vv in _dict.items():
-                    if isinstance(vv, int):
-                        self._token2id_feq[ww] = (vv + N, 0)
-                    else:
-                        self._token2id_feq[ww] = (vv[0] + N, vv[1])
+        if dict_path.endswith(".json"):
+            with open(dict_path) as f:
+                dictionary = json.load(f)
         else:
-            with open(path) as f:
+            dictionary = dict()
+            with open(dict_path) as f:
                 for i, line in enumerate(f):
                     ww = line.strip().split()[0]
-                    self._token2id_feq[ww] = (i + N, 0)
+                    dictionary[ww] = (i, 0)
+
+        if type == "word":
+            return WordVocabulary(dictionary=dictionary, max_n_words=max_n_words)
+        elif type == "bpe":
+            assert "codes" in kwargs
+            assert os.path.exists(kwargs['codes'])
+
+            return BPEVocabulary(dictionary=dictionary, max_n_words=max_n_words, codes=kwargs['codes'])
+        else:
+            raise ValueError("Unknown vocabulary type {0}".format(type))
+
+    def tokenize(self, sent: str) -> List[str]:
+        raise NotImplementedError
+
+    def detokenize(self, tokens: List[str]) -> str:
+        raise NotImplementedError
+
+    @property
+    def pad(self):
+        return 0
+
+    @property
+    def eos(self):
+        return 1
+
+    @property
+    def bos(self):
+        return 2
+
+    @property
+    def unk(self):
+        return 3
 
     def token2id(self, word):
 
@@ -63,7 +78,7 @@ class Vocabulary(object):
 
             return self._token2id_feq[word][0]
         else:
-            return self.UNK
+            return self.unk
 
     def id2token(self, word_id):
 
@@ -71,18 +86,34 @@ class Vocabulary(object):
 
     def sent2ids(self, sent):
 
-        tokens = self.tokenizer.tokenize(sent)
+        tokens = self.tokenize(sent)
 
         return [self.token2id(t) for t in tokens]
 
     def ids2sent(self, indices):
 
-        tokens = [self.id2token(ii) for ii in indices]
+        tokens = [self.id2token(ii) for ii in indices if ii not in {self.eos, self.bos, self.pad}]
 
-        return self.tokenizer.detokenize(tokens)
+        return self.detokenize(tokens)
 
 
-PAD = Vocabulary.PAD
-EOS = Vocabulary.EOS
-BOS = Vocabulary.BOS
-UNK = Vocabulary.UNK
+class WordVocabulary(Vocabulary):
+
+    def tokenize(self, sent: str) -> List[str]:
+        return sent.strip().split()
+
+    def detokenize(self, tokens: List[str]) -> str:
+        return ' '.join(tokens)
+
+
+class BPEVocabulary(Vocabulary):
+
+    def __init__(self, dictionary: dict, codes: str, max_n_words=-1):
+        super().__init__(dictionary=dictionary, max_n_words=max_n_words)
+        self.bpe = Bpe(codes=codes)
+
+    def tokenize(self, sent: str) -> List[str]:
+        return sum([self.bpe.segment_word(w) for w in sent.strip().split()], [])
+
+    def detokenize(self, tokens: List[str]) -> str:
+        return re.sub(r"@@\s|@@$", "", " ".join(tokens))

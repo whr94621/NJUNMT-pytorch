@@ -23,18 +23,15 @@
 import numpy as np
 import torch
 
-from src.data.vocabulary import EOS, PAD
-from src.utils.common_utils import GlobalNames
 from src.modules.tensor_utils import FLOAT32_INF
 
 __all__ = [
     'mask_scores',
-    'tensor_gather_helper',
-    'reranking_beams'
+    'tensor_gather_helper'
 ]
 
 
-def mask_scores(scores, beam_mask):
+def mask_scores(scores, beam_mask, eos_idx):
     """
     Mask scores of next step according to beam mask.
     Args:
@@ -51,7 +48,7 @@ def mask_scores(scores, beam_mask):
     finished_row = beam_mask.new(vocab_size, ).zero_() + float(FLOAT32_INF)
 
     # If beam finished, only PAD could be generated afterwards.
-    finished_row[EOS] = 0.0
+    finished_row[eos_idx] = 0.0
 
     scores = scores * beam_mask.unsqueeze(2) + \
              torch.matmul((1.0 - beam_mask).unsqueeze(2), finished_row.unsqueeze(0))
@@ -64,10 +61,7 @@ def tensor_gather_helper(gather_indices,
                          batch_size,
                          beam_size,
                          gather_shape):
-    range_ = (torch.arange(0, batch_size) * beam_size).long()
-
-    if GlobalNames.USE_GPU:
-        range_ = range_.cuda()
+    range_ = (torch.arange(0, batch_size) * beam_size).long().to(device=gather_indices.device)
 
     gather_indices_ = (gather_indices + torch.unsqueeze(range_, 1)).view(-1)
 
@@ -77,19 +71,3 @@ def tensor_gather_helper(gather_indices,
 
     return output.view(*out_size)
 
-
-def reranking_beams(word_ids, scores):
-    word_ids = word_ids.cpu().numpy()
-    scores = scores.cpu().numpy()
-
-    # Reranking beams
-    reranked_beams = np.argsort(scores, axis=1)
-    reranked_word_ids = np.ones_like(word_ids) * PAD
-
-    for b in range(scores.shape[0]):
-        for ii in reranked_beams[b]:
-            reranked_word_ids[b, ii] = word_ids[b, ii]
-
-    reranked_word_ids = reranked_word_ids.tolist()
-
-    return reranked_word_ids

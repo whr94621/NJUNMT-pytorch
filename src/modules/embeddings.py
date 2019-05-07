@@ -3,9 +3,6 @@ import math
 import torch
 import torch.nn as nn
 
-from src.data.vocabulary import PAD
-
-
 def sinusoidal_positional_embedding(x, min_timescale=1.0, max_timescale=1.0e4):
     batch, length, channels = list(x.size())
     assert (channels % 2 == 0)
@@ -79,7 +76,7 @@ class Embeddings(nn.Module):
                  embedding_dim,
                  dropout=0.0,
                  positional_embedding="none",
-                 padding_idx=PAD):
+                 padding_idx=-1):
 
         super().__init__()
 

@@ -25,7 +25,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import src.utils.init as my_init
-from src.data.vocabulary import PAD
 from src.modules.tensor_utils import tile_batch
 from src.decoding.utils import tensor_gather_helper
 from src.modules.cgru import CGRUCell
@@ -42,11 +41,13 @@ class Encoder(nn.Module):
     def __init__(self,
                  n_words,
                  input_size,
-                 hidden_size
+                 hidden_size,
+                 padding_idx=-1,
                  ):
         super(Encoder, self).__init__()
 
-        # Use PAD
+        self.padding_idx = padding_idx
+
         self.embeddings = Embeddings(num_embeddings=n_words,
                                      embedding_dim=input_size,
                                      dropout=0.0)
@@ -59,7 +60,7 @@ class Encoder(nn.Module):
         :param x: Input sequence.
             with shape [batch_size, seq_len, input_size]
         """
-        x_mask = x.detach().eq(PAD)
+        x_mask = x.detach().eq(self.padding_idx)
 
         emb = self.embeddings(x)
 
@@ -217,9 +218,12 @@ class Generator(nn.Module):
 class DL4MT(NMTModel):
 
     def __init__(self, n_src_vocab, n_tgt_vocab, d_word_vec, d_model, dropout,
-                 tie_input_output_embedding=True, bridge_type="mlp", tie_source_target_embedding=False, **kwargs):
+                 tie_input_output_embedding=True, bridge_type="mlp", tie_source_target_embedding=False,
+                 padding_idx=-1, **kwargs):
 
         super().__init__()
+
+        self.padding_idx = padding_idx
 
         self.encoder = Encoder(n_words=n_src_vocab, input_size=d_word_vec, hidden_size=d_model)
 
@@ -233,9 +237,9 @@ class DL4MT(NMTModel):
             self.encoder.embeddings.embeddings.weight = self.decoder.embeddings.embeddings.weight
 
         if tie_input_output_embedding is False:
-            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
+            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=self.padding_idx)
         else:
-            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
+            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=self.padding_idx,
                                   shared_weight=self.decoder.embeddings.embeddings.weight)
         self.generator = generator
 

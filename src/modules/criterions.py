@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
 
-from src.data.vocabulary import PAD
-
-
 class Criterion(nn.Module):
     """ Class for managing loss computation.
 
@@ -49,7 +46,7 @@ class NMTCriterion(Criterion):
     is supported.
     """
 
-    def __init__(self, padding_idx=PAD, label_smoothing=0.0):
+    def __init__(self, padding_idx=-1, label_smoothing=0.0):
 
         super().__init__()
 

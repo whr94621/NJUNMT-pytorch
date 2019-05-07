@@ -24,10 +24,6 @@ from src.utils.configs import default_configs, pretty_configs
 from src.utils.logging import *
 from src.utils.moving_average import MovingAverage
 
-BOS = Vocabulary.BOS
-EOS = Vocabulary.EOS
-PAD = Vocabulary.PAD
-
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -62,7 +58,7 @@ def combine_from_all_shards(all_gathered_output):
     return output
 
 
-def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
+def prepare_data(seqs_x, seqs_y, vocab_src: Vocabulary, vocab_tgt: Vocabulary, cuda=False, batch_first=True):
     """
     Args:
         eval ('bool'): indicator for eval/infer.
@@ -92,15 +88,15 @@ def prepare_data(seqs_x, seqs_y=None, cuda=False, batch_first=True):
             x = x.cuda()
         return x
 
-    seqs_x = list(map(lambda s: [BOS] + s + [EOS], seqs_x))
-    x = _np_pad_batch_2D(samples=seqs_x, pad=PAD,
+    seqs_x = list(map(lambda s: [vocab_src.bos] + s + [vocab_src.eos], seqs_x))
+    x = _np_pad_batch_2D(samples=seqs_x, pad=vocab_src.pad,
                          cuda=cuda, batch_first=batch_first)
 
     if seqs_y is None:
         return x
 
-    seqs_y = list(map(lambda s: [BOS] + s + [EOS], seqs_y))
-    y = _np_pad_batch_2D(seqs_y, pad=PAD,
+    seqs_y = list(map(lambda s: [vocab_tgt.bos] + s + [vocab_tgt.eos], seqs_y))
+    y = _np_pad_batch_2D(seqs_y, pad=vocab_tgt.pad,
                          cuda=cuda, batch_first=batch_first)
 
     return x, y
@@ -112,7 +108,8 @@ def compute_forward(model,
                     seqs_y,
                     eval=False,
                     normalization=1.0,
-                    norm_by_words=False
+                    norm_by_words=False,
+                    padding_idx=-1
                     ):
     """
     :type model: nn.Module
@@ -122,7 +119,7 @@ def compute_forward(model,
     y_inp = seqs_y[:, :-1].contiguous()
     y_label = seqs_y[:, 1:].contiguous()
 
-    words_norm = y_label.ne(PAD).float().sum(1)
+    words_norm = y_label.ne(padding_idx).float().sum(1)
 
     if not eval:
         model.train()
@@ -150,6 +147,7 @@ def compute_forward(model,
 
 def inference(valid_iterator,
               model,
+              vocab_src: Vocabulary,
               vocab_tgt: Vocabulary,
               batch_size,
               max_steps,
@@ -188,21 +186,21 @@ def inference(valid_iterator,
         if infer_progress_bar is not None:
             infer_progress_bar.update(len(seqs_x) * world_size)
 
-        x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x, seqs_y=None, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
 
         with torch.no_grad():
-            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha)
+            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha,
+                                   pad_idx=vocab_tgt.pad, bos_idx=vocab_tgt.bos, eos_idx=vocab_tgt.eos)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
         # Append result
         for sent_t in word_ids:
             for ii, sent_ in enumerate(sent_t):
-                sent_ = [vocab_tgt.id2token(wid) for wid in sent_ if wid != EOS and wid != PAD]
-                if len(sent_) > 0:
-                    trans_in_all_beams[ii].append(vocab_tgt.tokenizer.detokenize(sent_))
-                else:
-                    trans_in_all_beams[ii].append('%s' % vocab_tgt.id2token(EOS))
+                sent_ = vocab_tgt.ids2sent(sent_)
+                if sent_ == "":
+                    sent_ = '%s' % vocab_tgt.id2token(vocab_tgt.eos)
+                trans_in_all_beams[ii].append(sent_)
 
     if infer_progress_bar is not None:
         infer_progress_bar.close()
@@ -225,6 +223,7 @@ def inference(valid_iterator,
 
 def ensemble_inference(valid_iterator,
                        models,
+                       vocab_src: Vocabulary,
                        vocab_tgt: Vocabulary,
                        batch_size,
                        max_steps,
@@ -265,7 +264,7 @@ def ensemble_inference(valid_iterator,
         if infer_progress_bar is not None:
             infer_progress_bar.update(len(seqs_x) * world_size)
 
-        x = prepare_data(seqs_x, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x, seqs_y=None, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
 
         with torch.no_grad():
             word_ids = ensemble_beam_search(
@@ -281,11 +280,10 @@ def ensemble_inference(valid_iterator,
         # Append result
         for sent_t in word_ids:
             for ii, sent_ in enumerate(sent_t):
-                sent_ = [vocab_tgt.id2token(wid) for wid in sent_ if wid != EOS and wid != PAD]
-                if len(sent_) > 0:
-                    trans_in_all_beams[ii].append(vocab_tgt.tokenizer.detokenize(sent_))
-                else:
-                    trans_in_all_beams[ii].append('%s' % vocab_tgt.id2token(EOS))
+                sent_ = vocab_tgt.ids2sent(sent_)
+                if sent_ == "":
+                    sent_ = '%s' % vocab_tgt.id2token(vocab_tgt.eos)
+                trans_in_all_beams[ii].append(sent_)
 
     if infer_progress_bar is not None:
         infer_progress_bar.close()
@@ -303,7 +301,7 @@ def ensemble_inference(valid_iterator,
     return trans_in_all_beams
 
 
-def loss_evaluation(model, critic, valid_iterator, rank=0, world_size=1):
+def loss_evaluation(model, critic, valid_iterator, vocab_src: Vocabulary, vocab_tgt: Vocabulary, rank=0, world_size=1):
     """
     :type model: Transformer
 
@@ -323,13 +321,13 @@ def loss_evaluation(model, critic, valid_iterator, rank=0, world_size=1):
 
         n_sents += len(seqs_x)
 
-        x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
+        x, y = prepare_data(seqs_x, seqs_y, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
 
         loss = compute_forward(model=model,
                                critic=critic,
                                seqs_x=x,
                                seqs_y=y,
-                               eval=True)
+                               eval=True, padding_idx=vocab_tgt.pad)
 
         if np.isnan(loss):
             WARN("NaN detected!")
@@ -347,6 +345,7 @@ def bleu_evaluation(uidx,
                     valid_iterator,
                     model,
                     bleu_scorer,
+                    vocab_src,
                     vocab_tgt,
                     batch_size,
                     valid_dir="./valid",
@@ -360,6 +359,7 @@ def bleu_evaluation(uidx,
     translations_in_all_beams = inference(
         valid_iterator=valid_iterator,
         model=model,
+        vocab_src=vocab_src,
         vocab_tgt=vocab_tgt,
         batch_size=batch_size,
         max_steps=max_steps,
@@ -509,8 +509,8 @@ def train(flags):
     timer.tic()
 
     # Generate target dictionary
-    vocab_src = Vocabulary(**data_configs["vocabularies"][0])
-    vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
+    vocab_src = Vocabulary.build_from_file(**data_configs['vocabularies'][0])
+    vocab_tgt = Vocabulary.build_from_file(**data_configs['vocabularies'][1])
 
     train_bitext_dataset = ZipDataset(
         TextLineDataset(data_path=data_configs['train_data'][0],
@@ -579,10 +579,10 @@ def train(flags):
     INFO('Building model...')
     timer.tic()
     nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
-                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+                            n_tgt_vocab=vocab_tgt.max_n_words, padding_idx=vocab_src.pad, **model_configs)
     INFO(nmt_model)
 
-    critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'])
+    critic = NMTCriterion(label_smoothing=model_configs['label_smoothing'], padding_idx=vocab_tgt.pad)
 
     INFO(critic)
 
@@ -700,7 +700,7 @@ def train(flags):
 
             try:
                 # Prepare data
-                x, y = prepare_data(seqs_x, seqs_y, cuda=GlobalNames.USE_GPU)
+                x, y = prepare_data(seqs_x, seqs_y, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
 
                 loss = compute_forward(model=nmt_model,
                                        critic=critic,
@@ -708,7 +708,8 @@ def train(flags):
                                        seqs_y=y,
                                        eval=False,
                                        normalization=1.0,
-                                       norm_by_words=training_configs["norm_by_words"])
+                                       norm_by_words=training_configs["norm_by_words"],
+                                       padding_idx=vocab_tgt.pad)
 
                 update_cycle -= 1
                 grad_denom += batch_size
@@ -797,8 +798,9 @@ def train(flags):
                                                  critic=critic,
                                                  valid_iterator=valid_iterator,
                                                  rank=rank,
-                                                 world_size=world_size
-                                                 )
+                                                 world_size=world_size,
+                                                 vocab_src=vocab_src,
+                                                 vocab_tgt=vocab_tgt)
 
                 if scheduler is not None and optimizer_configs["schedule_method"] == "loss":
                     scheduler.step(metric=valid_loss)
@@ -829,6 +831,7 @@ def train(flags):
                                                  batch_size=training_configs["bleu_valid_batch_size"],
                                                  model=nmt_model,
                                                  bleu_scorer=bleu_scorer,
+                                                 vocab_src=vocab_src,
                                                  vocab_tgt=vocab_tgt,
                                                  valid_dir=flags.valid_path,
                                                  max_steps=training_configs["bleu_valid_configs"]["max_steps"],
@@ -934,8 +937,8 @@ def translate(flags):
     timer.tic()
 
     # Generate target dictionary
-    vocab_src = Vocabulary(**data_configs["vocabularies"][0])
-    vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
+    vocab_src = Vocabulary.build_from_file(**data_configs['vocabularies'][0])
+    vocab_tgt = Vocabulary.build_from_file(**data_configs['vocabularies'][1])
 
     valid_dataset = TextLineDataset(data_path=flags.source_path,
                                     vocabulary=vocab_src)
@@ -956,7 +959,7 @@ def translate(flags):
     INFO('Building model...')
     timer.tic()
     nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
-                            n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+                            n_tgt_vocab=vocab_tgt.max_n_words, padding_idx=vocab_src.pad, **model_configs)
     nmt_model.eval()
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -978,6 +981,7 @@ def translate(flags):
     translations_in_all_beams = inference(
         valid_iterator=valid_iterator,
         model=nmt_model,
+        vocab_src=vocab_src,
         vocab_tgt=vocab_tgt,
         batch_size=flags.batch_size,
         max_steps=flags.max_steps,
@@ -1036,8 +1040,8 @@ def ensemble_translate(flags):
     timer.tic()
 
     # Generate target dictionary
-    vocab_src = Vocabulary(**data_configs["vocabularies"][0])
-    vocab_tgt = Vocabulary(**data_configs["vocabularies"][1])
+    vocab_src = Vocabulary.build_from_file(**data_configs['vocabularies'][0])
+    vocab_tgt = Vocabulary.build_from_file(**data_configs['vocabularies'][1])
 
     valid_dataset = TextLineDataset(data_path=flags.source_path,
                                     vocabulary=vocab_src)
@@ -1065,7 +1069,7 @@ def ensemble_translate(flags):
     for ii in range(len(model_path)):
 
         nmt_model = build_model(n_src_vocab=vocab_src.max_n_words,
-                                n_tgt_vocab=vocab_tgt.max_n_words, **model_configs)
+                                n_tgt_vocab=vocab_tgt.max_n_words, padding_idx=vocab_src.pad, **model_configs)
         nmt_model.eval()
         INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -1089,6 +1093,7 @@ def ensemble_translate(flags):
     translations_in_all_beams = ensemble_inference(
         valid_iterator=valid_iterator,
         models=nmt_models,
+        vocab_src=vocab_src,
         vocab_tgt=vocab_tgt,
         batch_size=flags.batch_size,
         max_steps=flags.max_steps,
