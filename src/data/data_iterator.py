@@ -28,14 +28,14 @@ from typing import List
 
 import numpy as np
 
-from src.utils.common_utils import GlobalNames
+from src.utils.common_utils import Constants
 from .dataset import Record, zip_records
 
 __all__ = [
     'DataIterator'
 ]
 
-random.seed(GlobalNames.SEED)
+random.seed(Constants.SEED)
 
 
 def argsort(seq: List):

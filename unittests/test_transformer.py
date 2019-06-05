@@ -24,12 +24,12 @@ def test_transformer_train(test_dir, use_gpu=False):
 
 def test_transformer_inference(test_dir, use_gpu=False):
     from src.bin import translate
-    from src.utils.common_utils import GlobalNames
+    from src.utils.common_utils import Constants
     config_path = "./unittests/configs/test_transformer.yaml"
 
     saveto = os.path.join(test_dir, "save")
     model_name = test_utils.get_model_name(config_path)
-    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
+    model_path = os.path.join(saveto, model_name + Constants.MY_BEST_MODEL_SUFFIX + ".final")
     source_path = "./unittests/data/dev.de"
     batch_size = 3
     beam_size = 3
@@ -49,12 +49,12 @@ def test_transformer_inference(test_dir, use_gpu=False):
 
 def test_transformer_greedy_search(test_dir, use_gpu=False):
     from src.bin import translate
-    from src.utils.common_utils import GlobalNames
+    from src.utils.common_utils import Constants
     config_path = "./unittests/configs/test_transformer.yaml"
 
     saveto = os.path.join(test_dir, "save")
     model_name = test_utils.get_model_name(config_path)
-    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
+    model_path = os.path.join(saveto, model_name + Constants.MY_BEST_MODEL_SUFFIX + ".final")
     source_path = "./unittests/data/dev.de"
     batch_size = 3
     beam_size = 1
@@ -74,13 +74,13 @@ def test_transformer_greedy_search(test_dir, use_gpu=False):
 
 def test_transformer_ensemble_inference(test_dir, use_gpu=False):
     from src.bin import ensemble_translate
-    from src.utils.common_utils import GlobalNames
+    from src.utils.common_utils import Constants
     config_path = "./unittests/configs/test_transformer.yaml"
 
     saveto = os.path.join(test_dir, "save")
     model_name = test_utils.get_model_name(config_path)
 
-    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
+    model_path = os.path.join(saveto, model_name + Constants.MY_BEST_MODEL_SUFFIX + ".final")
     model_path = [model_path for _ in range(3)]
 
     source_path = "./unittests/data/dev.de"

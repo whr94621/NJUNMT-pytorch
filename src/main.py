@@ -20,7 +20,7 @@ from src.modules.criterions import NMTCriterion
 from src.optim import Optimizer
 from src.optim.lr_scheduler import build_scheduler
 from src.utils.common_utils import *
-from src.utils.configs import default_configs, pretty_configs
+from src.utils.configs import pretty_configs, add_user_configs, default_base_configs
 from src.utils.logging import *
 from src.utils.moving_average import MovingAverage
 
@@ -58,7 +58,26 @@ def combine_from_all_shards(all_gathered_output):
     return output
 
 
-def prepare_data(seqs_x, seqs_y, vocab_src: Vocabulary, vocab_tgt: Vocabulary, cuda=False, batch_first=True):
+def prepare_configs(config_path: str, predefined_config: str = "") -> dict:
+    """Prepare configuration file"""
+    # 1. Default configurations
+    default_configs = default_base_configs()
+
+    # 2. [Optional] Load pre-defined configurations
+    default_configs = load_predefined_configs(default_configs, predefined_config)
+
+    # 3. Load user configs
+    config_path = os.path.abspath(config_path)
+
+    with open(config_path.strip()) as f:
+        configs = yaml.load(f)
+
+    configs = add_user_configs(default_configs, configs)
+
+    return configs
+
+
+def prepare_data(seqs_x, seqs_y, cuda=False, batch_first=True):
     """
     Args:
         eval ('bool'): indicator for eval/infer.
@@ -88,15 +107,15 @@ def prepare_data(seqs_x, seqs_y, vocab_src: Vocabulary, vocab_tgt: Vocabulary, c
             x = x.cuda()
         return x
 
-    seqs_x = list(map(lambda s: [vocab_src.bos] + s + [vocab_src.eos], seqs_x))
-    x = _np_pad_batch_2D(samples=seqs_x, pad=vocab_src.pad,
+    seqs_x = list(map(lambda s: [Constants.BOS] + s + [Constants.EOS], seqs_x))
+    x = _np_pad_batch_2D(samples=seqs_x, pad=Constants.PAD,
                          cuda=cuda, batch_first=batch_first)
 
     if seqs_y is None:
         return x
 
-    seqs_y = list(map(lambda s: [vocab_tgt.bos] + s + [vocab_tgt.eos], seqs_y))
-    y = _np_pad_batch_2D(seqs_y, pad=vocab_tgt.pad,
+    seqs_y = list(map(lambda s: [Constants.BOS] + s + [Constants.EOS], seqs_y))
+    y = _np_pad_batch_2D(seqs_y, pad=Constants.PAD,
                          cuda=cuda, batch_first=batch_first)
 
     return x, y
@@ -108,8 +127,7 @@ def compute_forward(model,
                     seqs_y,
                     eval=False,
                     normalization=1.0,
-                    norm_by_words=False,
-                    padding_idx=-1
+                    norm_by_words=False
                     ):
     """
     :type model: nn.Module
@@ -119,7 +137,7 @@ def compute_forward(model,
     y_inp = seqs_y[:, :-1].contiguous()
     y_label = seqs_y[:, 1:].contiguous()
 
-    words_norm = y_label.ne(padding_idx).float().sum(1)
+    words_norm = y_label.ne(Constants.PAD).float().sum(1)
 
     if not eval:
         model.train()
@@ -147,7 +165,6 @@ def compute_forward(model,
 
 def inference(valid_iterator,
               model,
-              vocab_src: Vocabulary,
               vocab_tgt: Vocabulary,
               batch_size,
               max_steps,
@@ -186,11 +203,10 @@ def inference(valid_iterator,
         if infer_progress_bar is not None:
             infer_progress_bar.update(len(seqs_x) * world_size)
 
-        x = prepare_data(seqs_x, seqs_y=None, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x, seqs_y=None, cuda=Constants.USE_GPU)
 
         with torch.no_grad():
-            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha,
-                                   pad_idx=vocab_tgt.pad, bos_idx=vocab_tgt.bos, eos_idx=vocab_tgt.eos)
+            word_ids = beam_search(nmt_model=model, beam_size=beam_size, max_steps=max_steps, src_seqs=x, alpha=alpha)
 
         word_ids = word_ids.cpu().numpy().tolist()
 
@@ -223,7 +239,6 @@ def inference(valid_iterator,
 
 def ensemble_inference(valid_iterator,
                        models,
-                       vocab_src: Vocabulary,
                        vocab_tgt: Vocabulary,
                        batch_size,
                        max_steps,
@@ -264,7 +279,7 @@ def ensemble_inference(valid_iterator,
         if infer_progress_bar is not None:
             infer_progress_bar.update(len(seqs_x) * world_size)
 
-        x = prepare_data(seqs_x, seqs_y=None, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
+        x = prepare_data(seqs_x, seqs_y=None, cuda=Constants.USE_GPU)
 
         with torch.no_grad():
             word_ids = ensemble_beam_search(
@@ -301,7 +316,7 @@ def ensemble_inference(valid_iterator,
     return trans_in_all_beams
 
 
-def loss_evaluation(model, critic, valid_iterator, vocab_src: Vocabulary, vocab_tgt: Vocabulary, rank=0, world_size=1):
+def loss_evaluation(model, critic, valid_iterator, rank=0, world_size=1):
     """
     :type model: Transformer
 
@@ -321,13 +336,13 @@ def loss_evaluation(model, critic, valid_iterator, vocab_src: Vocabulary, vocab_
 
         n_sents += len(seqs_x)
 
-        x, y = prepare_data(seqs_x, seqs_y, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
+        x, y = prepare_data(seqs_x, seqs_y, cuda=Constants.USE_GPU)
 
         loss = compute_forward(model=model,
                                critic=critic,
                                seqs_x=x,
                                seqs_y=y,
-                               eval=True, padding_idx=vocab_tgt.pad)
+                               eval=True)
 
         if np.isnan(loss):
             WARN("NaN detected!")
@@ -359,7 +374,6 @@ def bleu_evaluation(uidx,
     translations_in_all_beams = inference(
         valid_iterator=valid_iterator,
         model=model,
-        vocab_src=vocab_src,
         vocab_tgt=vocab_tgt,
         batch_size=batch_size,
         max_steps=max_steps,
@@ -449,7 +463,7 @@ def train(flags):
     # Initialization for training on different devices
     # - CPU/GPU
     # - Single/Distributed
-    GlobalNames.USE_GPU = flags.use_gpu
+    Constants.USE_GPU = flags.use_gpu
 
     if flags.multi_gpu:
         dist.distributed_init(flags.shared_dir)
@@ -461,11 +475,11 @@ def train(flags):
         rank = 0
         local_rank = 0
 
-    if GlobalNames.USE_GPU:
+    if Constants.USE_GPU:
         torch.cuda.set_device(local_rank)
-        CURRENT_DEVICE = "cuda:{0}".format(local_rank)
+        Constants.CURRENT_DEVICE = "cuda:{0}".format(local_rank)
     else:
-        CURRENT_DEVICE = "cpu"
+        Constants.CURRENT_DEVICE = "cpu"
 
     # If not root_rank, close logging
     # else write log of training to file.
@@ -476,18 +490,11 @@ def train(flags):
 
     # ================================================================================== #
     # Parsing configuration files
+    # - Load default settings
+    # - Load pre-defined settings
+    # - Load user-defined settings
 
-    config_path = os.path.abspath(flags.config_path)
-
-    with open(config_path.strip()) as f:
-        configs = yaml.load(f)
-
-    # Add default configs
-    configs = default_configs(configs)
-
-    # Use predefined configuration
-    if flags.predefined_config is not None:
-        configs = load_predefined_configs(configs=configs, name=flags.predefined_config)
+    configs = prepare_configs(flags.config_path, flags.predefined_config)
 
     data_configs = configs['data_configs']
     model_configs = configs['model_configs']
@@ -496,9 +503,9 @@ def train(flags):
 
     INFO(pretty_configs(configs))
 
-    GlobalNames.SEED = training_configs['seed']
+    Constants.SEED = training_configs['seed']
 
-    set_seed(GlobalNames.SEED)
+    set_seed(Constants.SEED)
 
     timer = Timer()
 
@@ -511,6 +518,10 @@ def train(flags):
     # Generate target dictionary
     vocab_src = Vocabulary.build_from_file(**data_configs['vocabularies'][0])
     vocab_tgt = Vocabulary.build_from_file(**data_configs['vocabularies'][1])
+
+    Constants.EOS = vocab_src.eos
+    Constants.PAD = vocab_src.pad
+    Constants.BOS = vocab_src.bos
 
     train_bitext_dataset = ZipDataset(
         TextLineDataset(data_path=data_configs['train_data'][0],
@@ -572,7 +583,7 @@ def train(flags):
     checkpoint_saver = Saver(save_prefix="{0}.ckpt".format(os.path.join(flags.saveto, flags.model_name)),
                              num_max_keeping=training_configs['num_kept_checkpoints']
                              )
-    best_model_prefix = os.path.join(flags.saveto, flags.model_name + GlobalNames.MY_BEST_MODEL_SUFFIX)
+    best_model_prefix = os.path.join(flags.saveto, flags.model_name + Constants.MY_BEST_MODEL_SUFFIX)
     best_model_saver = Saver(save_prefix=best_model_prefix, num_max_keeping=training_configs['num_kept_best_model'])
 
     # 1. Build Model & Criterion
@@ -587,12 +598,12 @@ def train(flags):
     INFO(critic)
 
     # 2. Move to GPU
-    if GlobalNames.USE_GPU:
+    if Constants.USE_GPU:
         nmt_model = nmt_model.cuda()
         critic = critic.cuda()
 
     # 3. Load pretrained model if needed
-    load_pretrained_model(nmt_model, flags.pretrain_path, exclude_prefix=None, device=CURRENT_DEVICE)
+    load_pretrained_model(nmt_model, flags.pretrain_path, exclude_prefix=None, device=Constants.CURRENT_DEVICE)
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
 
@@ -637,7 +648,7 @@ def train(flags):
                                      optim=optim,
                                      lr_scheduler=scheduler,
                                      collections=model_collections,
-                                     ma=ma, device=CURRENT_DEVICE)
+                                     ma=ma, device=Constants.CURRENT_DEVICE)
 
     # broadcast parameters and optimizer states
     if world_size > 1:
@@ -700,7 +711,7 @@ def train(flags):
 
             try:
                 # Prepare data
-                x, y = prepare_data(seqs_x, seqs_y, vocab_src=vocab_src, vocab_tgt=vocab_tgt, cuda=GlobalNames.USE_GPU)
+                x, y = prepare_data(seqs_x, seqs_y, cuda=Constants.USE_GPU)
 
                 loss = compute_forward(model=nmt_model,
                                        critic=critic,
@@ -708,8 +719,7 @@ def train(flags):
                                        seqs_y=y,
                                        eval=False,
                                        normalization=1.0,
-                                       norm_by_words=training_configs["norm_by_words"],
-                                       padding_idx=vocab_tgt.pad)
+                                       norm_by_words=training_configs["norm_by_words"])
 
                 update_cycle -= 1
                 grad_denom += batch_size
@@ -798,9 +808,7 @@ def train(flags):
                                                  critic=critic,
                                                  valid_iterator=valid_iterator,
                                                  rank=rank,
-                                                 world_size=world_size,
-                                                 vocab_src=vocab_src,
-                                                 vocab_tgt=vocab_tgt)
+                                                 world_size=world_size)
 
                 if scheduler is not None and optimizer_configs["schedule_method"] == "loss":
                     scheduler.step(metric=valid_loss)
@@ -905,7 +913,7 @@ def train(flags):
 
 
 def translate(flags):
-    GlobalNames.USE_GPU = flags.use_gpu
+    Constants.USE_GPU = flags.use_gpu
 
     if flags.multi_gpu:
         dist.distributed_init(flags.shared_dir)
@@ -970,7 +978,7 @@ def translate(flags):
 
     nmt_model.load_state_dict(params)
 
-    if GlobalNames.USE_GPU:
+    if Constants.USE_GPU:
         nmt_model.cuda()
 
     INFO('Done. Elapsed time {0}'.format(timer.toc()))
@@ -981,7 +989,6 @@ def translate(flags):
     translations_in_all_beams = inference(
         valid_iterator=valid_iterator,
         model=nmt_model,
-        vocab_src=vocab_src,
         vocab_tgt=vocab_tgt,
         batch_size=flags.batch_size,
         max_steps=flags.max_steps,
@@ -1008,7 +1015,7 @@ def translate(flags):
 
 
 def ensemble_translate(flags):
-    GlobalNames.USE_GPU = flags.use_gpu
+    Constants.USE_GPU = flags.use_gpu
 
     if flags.multi_gpu:
         dist.distributed_init(flags.shared_dir)
@@ -1080,7 +1087,7 @@ def ensemble_translate(flags):
 
         nmt_model.load_state_dict(params)
 
-        if GlobalNames.USE_GPU:
+        if Constants.USE_GPU:
             nmt_model.cuda()
 
         nmt_models.append(nmt_model)
@@ -1093,7 +1100,6 @@ def ensemble_translate(flags):
     translations_in_all_beams = ensemble_inference(
         valid_iterator=valid_iterator,
         models=nmt_models,
-        vocab_src=vocab_src,
         vocab_tgt=vocab_tgt,
         batch_size=flags.batch_size,
         max_steps=flags.max_steps,

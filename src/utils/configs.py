@@ -73,16 +73,14 @@ def default_base_configs():
 
             # About moving average
             "moving_average_method": None,  # sma | ema | None
+            "moving_average_alpha": 0.0
         }
     }
 
 
-def default_configs(user_configs):
-    # init default configs
-    base_configs = default_base_configs()
-
-    # add default values to user_configs
-    add_default_configs(user_configs, base_configs)
+def add_user_configs(default_configs: dict, user_configs: dict) -> dict:
+    """Add user defined configurations to default configurations"""
+    add_default_configs(user_configs, default_configs)
     return user_configs
 
 

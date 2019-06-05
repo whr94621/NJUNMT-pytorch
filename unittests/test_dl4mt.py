@@ -46,13 +46,13 @@ def test_dl4mt_train(test_dir, use_gpu=False):
 
 def test_dl4mt_inference(test_dir, use_gpu=False):
     from src.bin import translate
-    from src.utils.common_utils import GlobalNames
+    from src.utils.common_utils import Constants
 
     config_path = "./unittests/configs/test_dl4mt.yaml"
 
     saveto = os.path.join(test_dir, "save")
     model_name = test_utils.get_model_name(config_path)
-    model_path = os.path.join(saveto, model_name + GlobalNames.MY_BEST_MODEL_SUFFIX + ".final")
+    model_path = os.path.join(saveto, model_name + Constants.MY_BEST_MODEL_SUFFIX + ".final")
     source_path = "./unittests/data/dev.de"
     batch_size = 3
     beam_size = 3

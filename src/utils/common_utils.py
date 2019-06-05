@@ -12,7 +12,7 @@ from . import nest
 
 __all__ = [
     'batch_open',
-    'GlobalNames',
+    'Constants',
     'Timer',
     'Collections',
     'build_vocab_shortlist',
@@ -42,7 +42,7 @@ def batch_open(refs, mode='r'):
         h.close()
 
 
-class GlobalNames:
+class Constants:
     # learning rate variable name
     MY_LEARNING_RATE_NAME = "learning_rate"
 
@@ -57,6 +57,13 @@ class GlobalNames:
     USE_GPU = False
 
     SEED = 314159
+
+    PAD = 0
+    EOS = 1
+    BOS = 2
+    UNK = 3
+
+
 
 
 time_format = '%Y-%m-%d %H:%M:%S'

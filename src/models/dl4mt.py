@@ -32,6 +32,10 @@ from src.modules.embeddings import Embeddings
 from src.modules.rnn import RNN
 from .base import NMTModel
 
+from src.utils.common_utils import Constants
+
+PAD = Constants.PAD
+
 __all__ = [
     'DL4MT',
     'dl4mt_base'
@@ -41,13 +45,11 @@ class Encoder(nn.Module):
     def __init__(self,
                  n_words,
                  input_size,
-                 hidden_size,
-                 padding_idx=-1,
+                 hidden_size
                  ):
         super(Encoder, self).__init__()
 
-        self.padding_idx = padding_idx
-
+        # Use PAD
         self.embeddings = Embeddings(num_embeddings=n_words,
                                      embedding_dim=input_size,
                                      dropout=0.0)
@@ -60,7 +62,7 @@ class Encoder(nn.Module):
         :param x: Input sequence.
             with shape [batch_size, seq_len, input_size]
         """
-        x_mask = x.detach().eq(self.padding_idx)
+        x_mask = x.detach().eq(PAD)
 
         emb = self.embeddings(x)
 
@@ -218,12 +220,9 @@ class Generator(nn.Module):
 class DL4MT(NMTModel):
 
     def __init__(self, n_src_vocab, n_tgt_vocab, d_word_vec, d_model, dropout,
-                 tie_input_output_embedding=True, bridge_type="mlp", tie_source_target_embedding=False,
-                 padding_idx=-1, **kwargs):
+                 tie_input_output_embedding=True, bridge_type="mlp", tie_source_target_embedding=False, **kwargs):
 
         super().__init__()
-
-        self.padding_idx = padding_idx
 
         self.encoder = Encoder(n_words=n_src_vocab, input_size=d_word_vec, hidden_size=d_model)
 
@@ -237,9 +236,9 @@ class DL4MT(NMTModel):
             self.encoder.embeddings.embeddings.weight = self.decoder.embeddings.embeddings.weight
 
         if tie_input_output_embedding is False:
-            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=self.padding_idx)
+            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD)
         else:
-            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=self.padding_idx,
+            generator = Generator(n_words=n_tgt_vocab, hidden_size=d_word_vec, padding_idx=PAD,
                                   shared_weight=self.decoder.embeddings.embeddings.weight)
         self.generator = generator
 
