@@ -50,7 +50,7 @@ class SacreBLEUScorer(object):
         else:
             self.references = ["{0}{1}".format(self.reference_path, ii) for ii in range(self.num_refs)]
 
-        self.src_lang, self.tgt_lang = self.lang_pair.split("-")[1]
+        self.src_lang, self.tgt_lang = self.lang_pair.split("-")
         self.postprocess = postprocess
         self.test_set = test_set
 
